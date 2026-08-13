@@ -1,0 +1,22 @@
+{
+  "name": "arc-swap-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for Crypto Swap DEX on Arc Network",
+  "main": "index.js",
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "deploy:testnet": "npx hardhat run scripts/deploy.ts --network arcTestnet"
+  },
+  "dependencies": {
+    "@nomicfoundation/edr-win32-x64-msvc": "^0.14.1",
+    "@openzeppelin/contracts": "^5.0.2"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
