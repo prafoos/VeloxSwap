@@ -34,12 +34,20 @@ export default function App(): JSX.Element {
   const queryClient = useQueryClient();
   // Tabs: 'swap' | 'liquidity' | 'faucet'
   const [activeTab, setActiveTab] = useState<'swap' | 'liquidity' | 'stake' | 'faucet'>('swap');
+  const [stakeTxHash, setStakeTxHash] = useState<string>('');
 
-  
+ useEffect(() => {
+    if (!stakeTxHash) return;
+
+    const timer = setTimeout(() => {
+      setStakeTxHash('');
+    }, 10000);
+
+    return () => clearTimeout(timer);
+  }, [stakeTxHash]); 
 
   // Network Guard Check
   const isWrongNetwork = isConnected && chainId !== arcTestnet.id;
-
   // ----------------------------------------------------
   // BALANCES FETCHING
   // ----------------------------------------------------
@@ -187,8 +195,6 @@ console.log("✅ Final Parsed Earned VXC:", formattedEarnedVXC);
   const [stakeAmount, setStakeAmount] = useState<string>('');
   const { writeContractAsync } = useWriteContract();
 
-  
-   
   const [isProcessing, setIsProcessing] = useState(false);
 
 // Allowance ചെക്ക് (മറ്റ് useReadContract-കൾക്ക് സമീപം വയ്ക്കുക)
@@ -212,54 +218,57 @@ const needsApproval =
   amountParsed > 0n &&
   (allowance === undefined || (allowance as bigint) < amountParsed); 
 
-// ===== Combined Approve + Stake =====
-const handleApproveAndStake = async () => {
-  if (!stakeAmount || Number(stakeAmount) <= 0) return;
-  setIsProcessing(true);
 
-  try {
-    // 1. Approve needed ആണെങ്കിൽ മാത്രം
-    if (needsApproval) {
-      const approveHash = await writeContractAsync({
-        address: CONTRACT_ADDRESSES.USDC as `0x${string}`,
-        abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [CONTRACT_ADDRESSES.STAKING as `0x${string}`, amountParsed],
-      });
-      console.log('Approve Tx Hash:', approveHash);
+  // ===== Combined Approve + Stake =====
+  const handleApproveAndStake = async () => {
+    if (!stakeAmount || Number(stakeAmount) <= 0) return;
+    setStakeTxHash('');
+    setIsProcessing(true);
 
-      // Approve receipt കാത്തിരിക്കുക
-      const approveReceipt = await waitForTransactionReceipt(config, { hash: approveHash });
-      if (approveReceipt.status !== 'success') {
-        throw new Error('Approve failed');
+    try {
+      // 1. Approve if required
+      if (needsApproval) {
+        const approveHash = await writeContractAsync({
+          address: CONTRACT_ADDRESSES.USDC as `0x${string}`,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [CONTRACT_ADDRESSES.STAKING as `0x${string}`, amountParsed],
+        });
+        console.log('Approve Tx Hash:', approveHash);
+
+        const approveReceipt = await waitForTransactionReceipt(config, { hash: approveHash });
+        if (approveReceipt.status !== 'success') {
+          throw new Error('Approve failed');
+        }
       }
-    }
 
-    // 2. Stake (നിങ്ങളുടെ നിലവിലെ handleStake logic)
-    const hash = await writeContractAsync({
-      address: CONTRACT_ADDRESSES.STAKING as `0x${string}`,
-      abi: STAKING_ABI,
-      functionName: 'stake',
-      args: [amountParsed],
-    });
-    console.log('Stake Tx Hash:', hash);
+      // 2. Stake logic
+      const hash = await writeContractAsync({
+        address: CONTRACT_ADDRESSES.STAKING as `0x${string}`,
+        abi: STAKING_ABI,
+        functionName: 'stake',
+        args: [amountParsed],
+      });
 
-    const receipt = await waitForTransactionReceipt(config, { hash });
-    if (receipt.status === 'success') {
-      await queryClient.invalidateQueries();
-      await Promise.all([
-        refetchStakedBalance(),
-        refetchRewards(),
-        refetchAllowance?.(),
-      ]);
-      setStakeAmount('');
+      console.log('Stake Tx Hash:', hash);
+setStakeTxHash(hash);
+
+const receipt = await waitForTransactionReceipt(config, { hash });
+      if (receipt.status === 'success') {
+        await queryClient.invalidateQueries();
+        await Promise.all([
+          refetchStakedBalance(),
+          refetchRewards(),
+          refetchAllowance?.(),
+        ]);
+        setStakeAmount('');
+      }
+    } catch (err) {
+      console.error('Approve & Stake Error:', err);
+    } finally {
+      setIsProcessing(false);
     }
-  } catch (err) {
-    console.error('Approve & Stake Error:', err);
-  } finally {
-    setIsProcessing(false);
-  }
-};
+  };
 
  // 3. Unstake / Withdraw vUSDC
 const handleWithdraw = async () => {
@@ -278,8 +287,9 @@ const handleWithdraw = async () => {
       args: [amountParsed],
     });
 
-    console.log('Unstake Tx:', tx);
-    setStakeAmount('');
+   console.log('Unstake Tx:', tx);
+setStakeTxHash(tx); // 🔴 setTxHash(tx)-ന് പകരം ഇത് നൽകുക
+setStakeAmount('');
     refetchStakedBalance();
     refreshAllBalances();
     queryClient.invalidateQueries();
@@ -298,6 +308,7 @@ const handleWithdraw = async () => {
     });
 
     console.log('Claim Tx:', tx);
+    setStakeTxHash(tx); 
 
     // 1. റീവാർഡ് ഡാറ്റയും വാലറ്റ് ബാലൻസും റിഫ്രഷ് ചെയ്യുക
     if (refetchRewards) await refetchRewards(); 
@@ -357,7 +368,8 @@ const refreshAllBalances = async () => {
   // GENERAL WRITE TRANSACTION STATE
   // ----------------------------------------------------
   const { writeContract, data: txHash, error: txError, isPending: isTxPending, reset: resetTx } = useWriteContract();
-  const { isLoading: isTxConfirming, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const activeTxHash = txHash;
+  const { isLoading: isTxConfirming, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({ hash: activeTxHash });
 
   // Clear states when tab changes
   useEffect(() => {
@@ -544,7 +556,27 @@ const handleLiqArcgChange = (value: string) => {
 
   const needsLiqUsdcApprove = liqUsdcAllowanceRaw !== undefined && parsedLiqUsdc > 0n && liqUsdcAllowanceRaw < parsedLiqUsdc;
   const needsLiqArcgApprove = liqArcgAllowanceRaw !== undefined && parsedLiqArcg > 0n && liqArcgAllowanceRaw < parsedLiqArcg;
+  const calculateExpectedLp = () => {
+  const usdc = parseFloat(liqUsdcInput);
+  const arcg = parseFloat(liqArcgInput);
 
+  if (!usdc || !arcg || usdc <= 0 || arcg <= 0) return "0.0000";
+
+  // Use the pool values fetched above, converted to their display units.
+  const totalLp = lpTotalSupply;
+const reserveUsdcValue = reserveUsdc ? parseFloat(formatUnits(reserveUsdc, 6)) : 0;
+const reserveArcgValue = reserveArcg ? parseFloat(formatUnits(reserveArcg, 18)) : 0;
+
+  if (totalLp === 0 || reserveUsdcValue === 0 || reserveArcgValue === 0) {
+    return Math.sqrt(usdc * arcg).toFixed(4);
+  }
+
+  const lpFromUsdc = (usdc * totalLp) / reserveUsdcValue;
+  const lpFromArcg = (arcg * totalLp) / reserveArcgValue;
+
+  const result = Math.min(lpFromUsdc, lpFromArcg);
+  return isNaN(result) ? "0.0000" : result.toFixed(4);
+};
   // Approve USDC for Liquidity
   // Lines 298 - 307: Approve USDC for Liquidity
 const handleApproveLiqUsdc = async () => {
@@ -617,7 +649,9 @@ useEffect(() => {
     // Clear input fields
     setRemoveLpAmount('');
     setSwapInput('');
-    setStakeAmount('');     // <--- Stake/Unstake Input ക്ലിയർ ചെയ്യാൻ
+    setStakeAmount('');
+    setLiqUsdcInput('');
+    setLiqArcgInput('');
   }
 }, [isTxSuccess]); 
   // ----------------------------------------------------
@@ -986,6 +1020,15 @@ useEffect(() => {
                       </div>
                     </div>
 
+                    {liqUsdcInput && liqArcgInput && parseFloat(liqUsdcInput) > 0 && parseFloat(liqArcgInput) > 0 && (
+                      <div className="details-container" style={{ marginBottom: '1rem' }}>
+                        <div className="detail-item">
+                          <span>Estimated LP</span>
+                          <span className="detail-value">{calculateExpectedLp()} LP</span> 
+                        </div>
+                      </div>
+                    )}
+
                     <div style={{ marginTop: '1.25rem' }}>
                       {needsLiqUsdcApprove ? (
                         <button className="btn-action" onClick={handleApproveLiqUsdc} disabled={isTxPending || isTxConfirming}>
@@ -1087,14 +1130,14 @@ useEffect(() => {
               </div>
             )}
             {/* STAKING TAB */}
-          {activeTab === 'stake' && (
-            <div className="swap-card">
-              <div className="card-title-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-  <h2>vUSDC Staking</h2>
-  <span style={{ fontSize: '0.85rem', color: '#9ca3af', marginTop: '2px' }}>
-    3% APY Staking Reward
-  </span>
-</div> 
+        {activeTab === 'stake' && (
+        <div className="swap-card">
+          <div className="card-title-row" style={{ display: 'block' }}>
+            <h2>vUSDC Staking</h2>
+            <span style={{ fontSize: '0.85rem', color: '#34d399', marginTop: '4px', display: 'block' }}>
+            3% APY Staking Reward • Earn VXC token rewards by staking your vUSDC
+          </span> 
+          </div>
 
               {/* Staked Balance & Earned Rewards Displays */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
@@ -1186,25 +1229,64 @@ useEffect(() => {
         {/* Claim Rewards Button */}
         <button
           className="btn-connect"
+          onClick={handleClaim}
+          disabled={!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0}
           style={{
             width: '100%',
             marginTop: '0.75rem',
-            background: '#059669',
+            background: (!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0) ? '#374151' : '#059669',
+            color: (!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0) ? '#9ca3af' : '#ffffff',
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
             textAlign: 'center',
-            padding: '0.6rem 0.2rem'
+            padding: '0.6rem 0.2rem',
+            cursor: (!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0) ? 'not-allowed' : 'pointer',
+            opacity: (!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0) ? 0.6 : 1
           }}
-          onClick={handleClaim}
         >
           Claim VXC Rewards
         </button> 
+       {stakeTxHash && (
+            <div style={{
+              marginTop: '12px',
+              padding: '10px 14px',
+              backgroundColor: 'rgba(6, 78, 59, 0.25)',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              borderRadius: '10px',
+              textAlign: 'left'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#34d399', fontWeight: '600', fontSize: '12px' }}>
+                <CheckCircle style={{ width: '14px', height: '14px', flexShrink: 0 }} />
+                <span>Transaction Success!</span>
+              </div>
+              <p style={{ margin: '3px 0 0 0', fontSize: '10px', color: '#9ca3af', fontWeight: '400' }}>
+                Your request was completed with sub-second finality.
+              </p>
+              <a
+                href={`https://testnet.arcscan.app/tx/${stakeTxHash}`} 
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  color: '#38bdf8',
+                  fontSize: '10px',
+                  marginTop: '4px',
+                  fontWeight: '500',
+                  textDecoration: 'none'
+                }}
+              >
+                View on Explorer <ExternalLink style={{ width: '10px', height: '10px' }} />
+              </a>
             </div>
           )} 
-           
-            {/* FAUCET TAB */}
-            {activeTab === 'faucet' && (
+      </div>
+    )}
+
+    {/* FAUCET TAB */}
+    {activeTab === 'faucet' && (
               <div className="swap-card" style={{ textAlign: 'center' }}>
                 <Coins size={40} color="var(--color-secondary)" style={{ marginBottom: '1rem' }} />
                 <h2>Arc Testnet Faucet</h2>
