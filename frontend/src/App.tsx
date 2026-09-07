@@ -1176,17 +1176,25 @@ useEffect(() => {
                   </div>
                 </div>
               </div>
-
-         {/* Action Buttons: Approve & Stake + Unstake */}
+{/* Action Buttons: Stake & Unstake */}
 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-  
-  {/* Combined Approve & Stake Button */}
+  {/* Approve & Stake Button */}
   <button
     className="btn-connect"
+    onClick={handleApproveAndStake}
+    disabled={
+      isProcessing ||
+      !stakeAmount ||
+      Number(stakeAmount) <= 0 ||
+      Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance)
+    }
     style={{
-      background: isProcessing
-        ? '#6b7280'
-        : 'linear-gradient(to right, #8b5cf6, #4f46e5)',
+      background:
+        Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance)
+          ? 'rgb(75, 85, 99)'
+          : isProcessing
+          ? '#6b7280'
+          : '#8b5cf6',
       fontSize: '0.85rem',
       padding: '0.6rem 0.2rem',
       display: 'flex',
@@ -1194,24 +1202,30 @@ useEffect(() => {
       alignItems: 'center',
       textAlign: 'center',
       width: '100%',
-      opacity: isProcessing ? 0.7 : 1,
-      cursor: isProcessing ? 'not-allowed' : 'pointer',
+      cursor:
+        Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance) || isProcessing
+          ? 'not-allowed'
+          : 'pointer',
+      opacity:
+        Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance) || isProcessing
+          ? 0.6
+          : 1,
     }}
-    onClick={handleApproveAndStake}
-    disabled={isProcessing || !stakeAmount || Number(stakeAmount) <= 0}
   >
     {isProcessing
-  ? 'Processing...'
-  : needsApproval
-  ? 'Approve & Stake'
-  : 'Stake'}  
+      ? 'Processing...'
+      : Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance)
+      ? 'Insufficient Balance'
+      : 'Approve & Stake'}
   </button>
 
   {/* Unstake Button */}
   <button
     className="btn-connect"
+    onClick={handleWithdraw}
+    disabled={isProcessing || Number(rawStakedBalance) <= 0}
     style={{
-      background: '#ef4444',
+      background: Number(rawStakedBalance) <= 0 ? 'rgb(75, 85, 99)' : '#ef4444',
       fontSize: '0.85rem',
       padding: '0.6rem 0.2rem',
       display: 'flex',
@@ -1219,34 +1233,37 @@ useEffect(() => {
       alignItems: 'center',
       textAlign: 'center',
       width: '100%',
+      cursor: Number(rawStakedBalance) <= 0 ? 'not-allowed' : 'pointer',
+      opacity: Number(rawStakedBalance) <= 0 ? 0.6 : 1,
     }}
-    onClick={handleWithdraw}
   >
     Unstake
   </button>
 </div>
 
-        {/* Claim Rewards Button */}
-        <button
-          className="btn-connect"
-          onClick={handleClaim}
-          disabled={!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0}
-          style={{
-            width: '100%',
-            marginTop: '0.75rem',
-            background: (!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0) ? '#374151' : '#059669',
-            color: (!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0) ? '#9ca3af' : '#ffffff',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            textAlign: 'center',
-            padding: '0.6rem 0.2rem',
-            cursor: (!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0) ? 'not-allowed' : 'pointer',
-            opacity: (!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0) ? 0.6 : 1
-          }}
-        >
-          Claim VXC Rewards
-        </button> 
+{/* Claim Rewards Button - Separate Full Width */}
+<div style={{ width: '100%', marginTop: '0.75rem' }}>
+  <button
+    className="btn-connect"
+    onClick={handleClaim}
+    disabled={!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0}
+    style={{
+      width: '100%',
+      background: Number(earnedRewardFormatted) <= 0 ? 'rgb(75, 85, 99)' : '#10b981',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      textAlign: 'center',
+      padding: '0.6rem 0.2rem',
+      fontSize: '0.85rem',
+      cursor: Number(earnedRewardFormatted) <= 0 ? 'not-allowed' : 'pointer',
+      opacity: Number(earnedRewardFormatted) <= 0 ? 0.6 : 1,
+    }}
+  >
+    Claim VXC Rewards
+  </button>
+</div> 
+         
        {stakeTxHash && (
             <div style={{
               marginTop: '12px',
@@ -1282,7 +1299,7 @@ useEffect(() => {
               </a>
             </div>
           )} 
-      </div>
+        </div>
     )}
 
     {/* FAUCET TAB */}
