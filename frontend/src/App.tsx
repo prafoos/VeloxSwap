@@ -32,27 +32,25 @@ export default function App(): JSX.Element {
   const { address, isConnected, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
   const queryClient = useQueryClient();
-  // Tabs: 'swap' | 'liquidity' | 'faucet'
+
   const [activeTab, setActiveTab] = useState<'swap' | 'liquidity' | 'stake' | 'faucet'>('swap');
   const [stakeTxHash, setStakeTxHash] = useState<string>('');
 
- useEffect(() => {
+  useEffect(() => {
     if (!stakeTxHash) return;
-
     const timer = setTimeout(() => {
       setStakeTxHash('');
     }, 10000);
-
     return () => clearTimeout(timer);
   }, [stakeTxHash]); 
 
-  // Network Guard Check
   const isWrongNetwork = isConnected && chainId !== arcTestnet.id;
+
   // ----------------------------------------------------
   // BALANCES FETCHING
   // ----------------------------------------------------
   
-  // 1. Native Gas USDC (18 decimals)
+  // 1. Native Gas USDC
   const { data: gasBalanceData, refetch: refetchGasBalance } = useBalance({
     address: address,
   });
@@ -70,25 +68,24 @@ export default function App(): JSX.Element {
     },
   });
   const erc20UsdcBalance = isUsdcLoading
-  ? "Loading..."
-  : erc20UsdcRaw ? parseFloat(formatUnits(erc20UsdcRaw, 6)).toFixed(2) : "0.00"; 
+    ? "Loading..."
+    : erc20UsdcRaw ? parseFloat(formatUnits(erc20UsdcRaw, 6)).toFixed(2) : "0.00"; 
 
   // 3. Mock ARCG Token (18 decimals)
-  // 3. Mock ARCG Token (18 decimals)
-const { data: arcgRaw, refetch: refetchArcg, isLoading: isArcgLoading } = useReadContract({
-  address: CONTRACT_ADDRESSES.ARCG,
-  abi: ERC20_ABI,
-  functionName: 'balanceOf',
-  args: address ? [address] : undefined,
-  query: {
-    enabled: !!address,
-    refetchInterval: 10000, // ഓരോ 2 സെക്കന്റിലും ബാലൻസ് ഓട്ടോ-അപ്‌ഡേറ്റ് ചെയ്യും
-  },
-});
+  const { data: arcgRaw, refetch: refetchArcg, isLoading: isArcgLoading } = useReadContract({
+    address: CONTRACT_ADDRESSES.ARCG,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address,
+      refetchInterval: 10000,
+    },
+  });
 
-const arcgBalance = isArcgLoading 
-  ? "Loading..." 
-  : arcgRaw ? parseFloat(formatUnits(arcgRaw, 18)).toFixed(2) : "0.00"; 
+  const arcgBalance = isArcgLoading 
+    ? "Loading..." 
+    : arcgRaw ? parseFloat(formatUnits(arcgRaw, 18)).toFixed(2) : "0.00"; 
 
   // 4. LP Token Balance (18 decimals)
   const { data: lpRaw, refetch: refetchLp } = useReadContract({
@@ -106,7 +103,8 @@ const arcgBalance = isArcgLoading
     functionName: 'totalSupply',
   });
   const lpTotalSupply = lpTotalSupplyRaw ? parseFloat(formatUnits(lpTotalSupplyRaw, 18)) : 0;
-  // 1. Staking Contract Data
+
+  // Staking Contract Data
   const { data: stakerData, refetch: refetchStakedBalance } = useReadContract({
     address: CONTRACT_ADDRESSES.STAKING as `0x${string}`,
     abi: STAKING_ABI,
@@ -121,113 +119,75 @@ const arcgBalance = isArcgLoading
     } 
   });
 
-  // ==================== EARNED REWARDS ====================
-// Calculate Reward (Recommended)
-// ==================== CALCULATE REWARD ====================
-const { 
-  data: earnedRewardsData,
-  refetch: refetchRewards 
-} = useReadContract({
-  address: CONTRACT_ADDRESSES.STAKING as `0x${string}`,
-  abi: STAKING_ABI,
-  functionName: 'calculateReward',
-  args: address ? [address] : undefined,
-  query: {
-    enabled: !!address,
-    staleTime: 3000,
-  }
-});
+  // Calculate Rewards
+  const { data: earnedRewardsData, refetch: refetchRewards } = useReadContract({
+    address: CONTRACT_ADDRESSES.STAKING as `0x${string}`,
+    abi: STAKING_ABI,
+    functionName: 'calculateReward',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address,
+      staleTime: 3000,
+    }
+  });
 
-console.log("Calculate Reward Raw:", earnedRewardsData);
+  const rawEarned = earnedRewardsData ? BigInt(earnedRewardsData as any) : 0n;
+  const earnedRewardFormatted = parseFloat(formatUnits(rawEarned, 18)).toFixed(18);
 
-// Parsing
-const rawEarned = earnedRewardsData ? BigInt(earnedRewardsData as any) : 0n;
-const formattedEarnedVXC = parseFloat(formatUnits(rawEarned, 18)).toFixed(18);
-
-console.log("✅ Final Parsed Earned VXC:", formattedEarnedVXC);
-
-  // Safe & Strong Parsing
+  // Parse Staked Balance safely
   let rawStakedBalance = 0n;
-
   if (stakerData) {
     if (Array.isArray(stakerData)) {
       rawStakedBalance = stakerData[0] ?? 0n;
-    } 
-    else if (typeof stakerData === 'object') {
+    } else if (typeof stakerData === 'object') {
       const data = stakerData as any;
-      rawStakedBalance = 
-        data.stakedAmount ?? 
-        data.amount ?? 
-        data[0] ?? 
-        data._stakedAmount ?? 
-        0n;
-    } 
-    else {
+      rawStakedBalance = data.stakedAmount ?? data.amount ?? data[0] ?? data._stakedAmount ?? 0n;
+    } else {
       rawStakedBalance = BigInt(stakerData as any);
     }
   }
 
-  // 6 Decimals for vUSDC
   const stakedBalanceFormatted = parseFloat(formatUnits(rawStakedBalance, 6));
 
-  console.log("✅ Final Parsed Staked Balance:", stakedBalanceFormatted);
-  console.log("Stakers Raw Data:", earnedRewardsData); 
-
-  // Exact variable name for UI rendering
-  const earnedRewardFormatted = parseFloat(formatUnits(rawEarned, 18)).toFixed(18);
-
-  console.log("✅ Final Parsed Earned VXC:", earnedRewardFormatted);
- // 6. Safe Auto-fetch when Wallet connects or reloads
   useEffect(() => {
     if (!address) return;
-
     const timer = setTimeout(() => {
       refetchStakedBalance();
       refetchRewards();
     }, 200); 
-
     return () => clearTimeout(timer);
   }, [address, refetchStakedBalance, refetchRewards]); 
 
-    
+  // ----------------------------------------------------
   // STAKING WRITE HOOKS & TRANSACTIONS
-  // ---------------------------------------------------------------------------
+  // ----------------------------------------------------
   const [stakeAmount, setStakeAmount] = useState<string>('');
   const { writeContractAsync } = useWriteContract();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUnstaking, setIsUnstaking] = useState(false);
 
-// Allowance ചെക്ക് (മറ്റ് useReadContract-കൾക്ക് സമീപം വയ്ക്കുക)
-  const { 
-  data: allowance, 
-  refetch: refetchAllowance,
-} = useReadContract({
-  address: CONTRACT_ADDRESSES.USDC as `0x${string}`,
-  abi: ERC20_ABI,
-  functionName: 'allowance',
-  args: [address as `0x${string}`, CONTRACT_ADDRESSES.STAKING as `0x${string}`],
-  query: { 
-    enabled: !!address,
-  },
-});
+  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+    address: CONTRACT_ADDRESSES.USDC as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: 'allowance',
+    args: address ? [address, CONTRACT_ADDRESSES.STAKING as `0x${string}`] : undefined,
+    query: { enabled: !!address },
+  });
 
-  const amountParsed = stakeAmount ? parseUnits(stakeAmount || '0', 6) : 0n;
+  const amountParsed = stakeAmount && !isNaN(parseFloat(stakeAmount)) ? parseUnits(stakeAmount, 6) : 0n;
 
-const needsApproval =
-  !!address &&
-  amountParsed > 0n &&
-  (allowance === undefined || (allowance as bigint) < amountParsed); 
+  const needsApproval =
+    !!address &&
+    amountParsed > 0n &&
+    (allowance === undefined || (allowance as bigint) < amountParsed); 
 
-
-  // ===== Combined Approve + Stake =====
   const handleApproveAndStake = async () => {
     if (!stakeAmount || Number(stakeAmount) <= 0) return;
     setStakeTxHash('');
     setIsProcessing(true);
 
     try {
-      // 1. Approve if required
       if (needsApproval) {
         const approveHash = await writeContractAsync({
           address: CONTRACT_ADDRESSES.USDC as `0x${string}`,
@@ -235,7 +195,6 @@ const needsApproval =
           functionName: 'approve',
           args: [CONTRACT_ADDRESSES.STAKING as `0x${string}`, amountParsed],
         });
-        console.log('Approve Tx Hash:', approveHash);
 
         const approveReceipt = await waitForTransactionReceipt(config, { hash: approveHash });
         if (approveReceipt.status !== 'success') {
@@ -243,7 +202,6 @@ const needsApproval =
         }
       }
 
-      // 2. Stake logic
       const hash = await writeContractAsync({
         address: CONTRACT_ADDRESSES.STAKING as `0x${string}`,
         abi: STAKING_ABI,
@@ -251,16 +209,16 @@ const needsApproval =
         args: [amountParsed],
       });
 
-      console.log('Stake Tx Hash:', hash);
-setStakeTxHash(hash);
+      setStakeTxHash(hash);
 
-const receipt = await waitForTransactionReceipt(config, { hash });
+      const receipt = await waitForTransactionReceipt(config, { hash });
       if (receipt.status === 'success') {
         await queryClient.invalidateQueries();
         await Promise.all([
           refetchStakedBalance(),
           refetchRewards(),
-          refetchAllowance?.(),
+          refetchAllowance(),
+          refetchErc20Usdc()
         ]);
         setStakeAmount('');
       }
@@ -271,67 +229,53 @@ const receipt = await waitForTransactionReceipt(config, { hash });
     }
   };
 
- // 3. Unstake / Withdraw vUSDC
-const handleWithdraw = async () => {
-  if (!stakeAmount || isNaN(parseFloat(stakeAmount)) || parseFloat(stakeAmount) <= 0) {
-    console.warn('Please enter a valid amount to unstake');
-    return;
-  }
+  const handleWithdraw = async () => {
+    if (!stakeAmount || isNaN(parseFloat(stakeAmount)) || parseFloat(stakeAmount) <= 0) return;
 
-  setIsUnstaking(true);
-  try {
-    const amountParsed = parseUnits(stakeAmount, 6);
+    setIsUnstaking(true);
+    try {
+      const amountParsed = parseUnits(stakeAmount, 6);
+      const tx = await writeContractAsync({
+        address: CONTRACT_ADDRESSES.STAKING as `0x${string}`,
+        abi: STAKING_ABI,
+        functionName: 'unstake', 
+        args: [amountParsed],
+      });
 
-    const tx = await writeContractAsync({
-      address: CONTRACT_ADDRESSES.STAKING as `0x${string}`,
-      abi: STAKING_ABI,
-      functionName: 'unstake', 
-      args: [amountParsed],
-    });
+      setStakeTxHash(tx);
+      setStakeAmount('');
+      refetchStakedBalance();
+      await refreshAllBalances();
+      queryClient.invalidateQueries();
+    } catch (err) {
+      console.error('Unstake Error:', err);
+    } finally {
+      setIsUnstaking(false);
+    }
+  }; 
 
-   console.log('Unstake Tx:', tx);
-setStakeTxHash(tx); // 🔴 setTxHash(tx)-ന് പകരം ഇത് നൽകുക
-setStakeAmount('');
-    refetchStakedBalance();
-    refreshAllBalances();
-    queryClient.invalidateQueries();
-  } catch (err) {
-    console.error('Unstake Error:', err);
-  } finally {
-    setIsUnstaking(false);
-  }
-}; 
-
-  // 3. Claim Rewards (VXC)
   const handleClaim = async () => {
-  try {
-    const tx = await writeContractAsync({
-      address: CONTRACT_ADDRESSES.STAKING,
-      abi: STAKING_ABI,
-      functionName: 'claimReward', // അല്ലെങ്കിൽ നിങ്ങളുടെ ABI-യിലെ ഫംഗ്ഷൻ പേര്
-    });
+    try {
+      const tx = await writeContractAsync({
+        address: CONTRACT_ADDRESSES.STAKING as `0x${string}`,
+        abi: STAKING_ABI,
+        functionName: 'claimReward',
+      });
 
-    console.log('Claim Tx:', tx);
-    setStakeTxHash(tx); 
+      setStakeTxHash(tx); 
+      if (refetchRewards) await refetchRewards(); 
+      queryClient.invalidateQueries();
+    } catch (err) {
+      console.error('Claim Error:', err);
+    }
+  }; 
 
-    // 1. റീവാർഡ് ഡാറ്റയും വാലറ്റ് ബാലൻസും റിഫ്രഷ് ചെയ്യുക
-    if (refetchRewards) await refetchRewards(); 
-    
-    // 2. React Query Cache ക്ലിയർ ചെയ്ത് പുതിയ ഡാറ്റ Fetch ചെയ്യുക
-    queryClient.invalidateQueries();
-
-  } catch (err) {
-    console.error('Claim Error:', err);
-  }
-}; 
-  // 6. Pool Reserves
+  // Reserves
   const { data: reservesData, refetch: refetchReserves, isLoading: isReservesLoading } = useReadContract({
     address: CONTRACT_ADDRESSES.POOL,
     abi: POOL_ABI,
     functionName: 'getReserves',
-    query: {
-      refetchInterval: 10000,
-    },
+    query: { refetchInterval: 10000 },
   });
 
   const reserveUsdc = reservesData ? reservesData[0] : 0n;
@@ -343,52 +287,46 @@ setStakeAmount('');
   const hasReservesLoaded = !isReservesLoading && reservesData !== undefined;
   const hasLiquidity = hasReservesLoaded && Number(reserveUsdc) > 0 && Number(reserveArcg) > 0;
 
-  // Helper to trigger refetch of all states
-  // Helper to trigger refetch of all states
-const refreshAllBalances = async () => {
-  try {
-    await Promise.all([
-      refetchGasBalance(),
-      refetchErc20Usdc(),
-      refetchArcg(),
-      refetchLp(),
-      refetchReserves(),
-      refetchLpSupply()
-    ]);
-    console.log("✅ All balances refreshed successfully");
-  } catch (error) {
-    console.error("❌ Refresh error:", error);
-  }
-};
+  const refreshAllBalances = async () => {
+    try {
+      await Promise.all([
+        refetchGasBalance(),
+        refetchErc20Usdc(),
+        refetchArcg(),
+        refetchLp(),
+        refetchReserves(),
+        refetchLpSupply(),
+        refetchStakedBalance(),
+        refetchRewards()
+      ]);
+      console.log("✅ All balances refreshed successfully");
+    } catch (error) {
+      console.error("❌ Refresh error:", error);
+    }
+  };
 
   useEffect(() => {
-  if (isConnected && address) {
-    refreshAllBalances();
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [address, isConnected]); 
+    if (isConnected && address) {
+      refreshAllBalances();
+    }
+  }, [address, isConnected]); 
 
-  // ----------------------------------------------------
-  // GENERAL WRITE TRANSACTION STATE
-  // ----------------------------------------------------
+  // WRITE TRANSACTIONS
   const { writeContract, data: txHash, error: txError, isPending: isTxPending, reset: resetTx } = useWriteContract();
   const activeTxHash = txHash;
   const { isLoading: isTxConfirming, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({ hash: activeTxHash });
 
-  // Clear states when tab changes
   useEffect(() => {
     resetTx();
   }, [activeTab]);
 
-  // ----------------------------------------------------
-  // TAB 1: SWAP INTERFACE
-  // ----------------------------------------------------
+  // SWAP
   const [swapDirection, setSwapDirection] = useState<'usdc-to-arcg' | 'arcg-to-usdc'>('usdc-to-arcg');
   const [swapInput, setSwapInput] = useState<string>('');
+  const [swapRawInput, setSwapRawInput] = useState<bigint | null>(null);
   const [swapOutput, setSwapOutput] = useState<string>('0');
   const [priceImpact, setPriceImpact] = useState<string>('0.00');
 
-  // Calculates swap output locally for instant feedback
   useEffect(() => {
     if (!swapInput || isNaN(parseFloat(swapInput)) || parseFloat(swapInput) <= 0) {
       setSwapOutput('0');
@@ -409,7 +347,6 @@ const refreshAllBalances = async () => {
         return;
       }
 
-      // x * y = k formula with 0.3% fee
       const amountInWithFee = amountIn * 997n;
       const numerator = amountInWithFee * rOut;
       const denominator = (rIn * 1000n) + amountInWithFee;
@@ -418,9 +355,6 @@ const refreshAllBalances = async () => {
       const outputDecimals = isUsdc ? 18 : 6;
       setSwapOutput(formatUnits(outAmount, outputDecimals));
 
-      // Price Impact Math: (Ideal swap price - Real swap price) / Ideal swap price
-      // Ideal Swap Price = reserveOut / reserveIn
-      // Real Swap Price = amountOut / amountIn
       const reserveInFloat = parseFloat(formatUnits(rIn, inputDecimals));
       const reserveOutFloat = parseFloat(formatUnits(rOut, outputDecimals));
       const inputFloat = parseFloat(swapInput);
@@ -436,7 +370,6 @@ const refreshAllBalances = async () => {
     }
   }, [swapInput, swapDirection, reserveUsdc, reserveArcg]);
 
-  // Fetch Swap Allowance
   const tokenInAddress = swapDirection === 'usdc-to-arcg' ? CONTRACT_ADDRESSES.USDC : CONTRACT_ADDRESSES.ARCG;
   const tokenInDecimals = swapDirection === 'usdc-to-arcg' ? 6 : 18;
 
@@ -447,10 +380,9 @@ const refreshAllBalances = async () => {
     args: address ? [address, CONTRACT_ADDRESSES.POOL] : undefined,
   });
 
-  const parsedSwapInput = swapInput && !isNaN(parseFloat(swapInput)) ? parseUnits(swapInput, tokenInDecimals) : 0n;
+  const parsedSwapInput = swapRawInput ?? (swapInput && !isNaN(parseFloat(swapInput)) ? parseUnits(swapInput, tokenInDecimals) : 0n);
   const needsSwapApproval = swapAllowanceRaw !== undefined && parsedSwapInput > 0n && swapAllowanceRaw < parsedSwapInput;
 
-  // Execute Token Approval for Swap
   const handleApproveSwap = async () => {
     if (!tokenInAddress || parsedSwapInput === 0n) return;
     resetTx();
@@ -462,15 +394,13 @@ const refreshAllBalances = async () => {
     });
   };
 
-  // Execute Swap transaction
   const handleSwap = async () => {
     if (parsedSwapInput === 0n) return;
     resetTx();
     
-    // Set 0.5% slippage tolerance
     const expectedOutDecimals = swapDirection === 'usdc-to-arcg' ? 18 : 6;
     const expectedOutRaw = parseUnits(swapOutput, expectedOutDecimals);
-    const minAmountOut = (expectedOutRaw * 995n) / 1000n; // 99.5%
+    const minAmountOut = (expectedOutRaw * 995n) / 1000n;
 
     writeContract({
       address: CONTRACT_ADDRESSES.POOL,
@@ -480,67 +410,42 @@ const refreshAllBalances = async () => {
     });
   };
 
-  // Trigger refetches after swap actions
-  useEffect(() => {
-    if (isTxSuccess) {
-      refreshAllBalances();
-      refetchSwapAllowance();
-    }
-  }, [isTxSuccess]);
-
-  // ----------------------------------------------------
-  // TAB 2: LIQUIDITY PROVISION
-  // ----------------------------------------------------
+  // LIQUIDITY
   const [liqUsdcInput, setLiqUsdcInput] = useState<string>('');
   const [liqArcgInput, setLiqArcgInput] = useState<string>('');
   const [isRemovingLiquidity, setIsRemovingLiquidity] = useState<boolean>(false);
   const [removeLpAmount, setRemoveLpAmount] = useState<string>('');
-  // Proportional input helper for adding liquidity
-// Proportional input helper for adding liquidity
-const handleLiqUsdcChange = (value: string) => {
-  setLiqUsdcInput(value);
 
-  // ഇൻപുട്ട് ക്ലിയർ ചെയ്യുകയോ അക്ഷരങ്ങൾ അടിക്കുകയോ ചെയ്താൽ ARCG ഫീൽഡും ക്ലിയർ ചെയ്യുക
-  if (value === '' || isNaN(Number(value))) {
-    setLiqArcgInput('');
-    return;
-  }
-
-  // പൂളിൽ റിസർവ് ഉണ്ടെങ്കിൽ ARCG തനിയെ കാൽക്കുലേറ്റ് ചെയ്യും
-  if (reserveUsdc > 0n && reserveArcg > 0n) {
-    try {
-      const usdcIn = parseUnits(value, 6);
-      const arcgOptimal = (usdcIn * reserveArcg) / reserveUsdc;
-      setLiqArcgInput(formatUnits(arcgOptimal, 18));
-    } catch {
-      // parseUnits എറർ വന്നാൽ അവഗണിക്കുക
+  const handleLiqUsdcChange = (value: string) => {
+    setLiqUsdcInput(value);
+    if (value === '' || isNaN(Number(value))) {
+      setLiqArcgInput('');
+      return;
     }
-  }
-};
-
-const handleLiqArcgChange = (value: string) => {
-  setLiqArcgInput(value);
-
-  // ഇൻപുട്ട് ക്ലിയർ ചെയ്യുകയോ അക്ഷരങ്ങൾ അടിക്കുകയോ ചെയ്താൽ vUSDC ഫീൽഡും ക്ലിയർ ചെയ്യുക
-  if (value === '' || isNaN(Number(value))) {
-    setLiqUsdcInput('');
-    return;
-  }
-
-  // പൂളിൽ റിസർവ് ഉണ്ടെങ്കിൽ vUSDC തനിയെ കാൽക്കുലേറ്റ് ചെയ്യും
-  if (reserveUsdc > 0n && reserveArcg > 0n) {
-    try {
-      const arcgIn = parseUnits(value, 18);
-      const usdcOptimal = (arcgIn * reserveUsdc) / reserveArcg;
-      setLiqUsdcInput(formatUnits(usdcOptimal, 6));
-    } catch {
-      // parseUnits എറർ വന്നാൽ അവഗണിക്കുക
+    if (reserveUsdc > 0n && reserveArcg > 0n) {
+      try {
+        const usdcIn = parseUnits(value, 6);
+        const arcgOptimal = (usdcIn * reserveArcg) / reserveUsdc;
+        setLiqArcgInput(formatUnits(arcgOptimal, 18));
+      } catch {}
     }
-  }
-}; 
+  };
 
+  const handleLiqArcgChange = (value: string) => {
+    setLiqArcgInput(value);
+    if (value === '' || isNaN(Number(value))) {
+      setLiqUsdcInput('');
+      return;
+    }
+    if (reserveUsdc > 0n && reserveArcg > 0n) {
+      try {
+        const arcgIn = parseUnits(value, 18);
+        const usdcOptimal = (arcgIn * reserveUsdc) / reserveArcg;
+        setLiqUsdcInput(formatUnits(usdcOptimal, 6));
+      } catch {}
+    }
+  }; 
 
-  // Allowances for adding liquidity
   const { data: liqUsdcAllowanceRaw, refetch: refetchLiqUsdcAllowance } = useReadContract({
     address: CONTRACT_ADDRESSES.USDC,
     abi: ERC20_ABI,
@@ -560,68 +465,61 @@ const handleLiqArcgChange = (value: string) => {
 
   const needsLiqUsdcApprove = liqUsdcAllowanceRaw !== undefined && parsedLiqUsdc > 0n && liqUsdcAllowanceRaw < parsedLiqUsdc;
   const needsLiqArcgApprove = liqArcgAllowanceRaw !== undefined && parsedLiqArcg > 0n && liqArcgAllowanceRaw < parsedLiqArcg;
+
   const calculateExpectedLp = () => {
-  const usdc = parseFloat(liqUsdcInput);
-  const arcg = parseFloat(liqArcgInput);
+    const usdc = parseFloat(liqUsdcInput);
+    const arcg = parseFloat(liqArcgInput);
 
-  if (!usdc || !arcg || usdc <= 0 || arcg <= 0) return "0.0000";
+    if (!usdc || !arcg || usdc <= 0 || arcg <= 0) return "0.0000";
 
-  // Use the pool values fetched above, converted to their display units.
-  const totalLp = lpTotalSupply;
-const reserveUsdcValue = reserveUsdc ? parseFloat(formatUnits(reserveUsdc, 6)) : 0;
-const reserveArcgValue = reserveArcg ? parseFloat(formatUnits(reserveArcg, 18)) : 0;
+    const totalLp = lpTotalSupply;
+    const reserveUsdcValue = reserveUsdc ? parseFloat(formatUnits(reserveUsdc, 6)) : 0;
+    const reserveArcgValue = reserveArcg ? parseFloat(formatUnits(reserveArcg, 18)) : 0;
 
-  if (totalLp === 0 || reserveUsdcValue === 0 || reserveArcgValue === 0) {
-    return Math.sqrt(usdc * arcg).toFixed(4);
-  }
+    if (totalLp === 0 || reserveUsdcValue === 0 || reserveArcgValue === 0) {
+      return Math.sqrt(usdc * arcg).toFixed(4);
+    }
 
-  const lpFromUsdc = (usdc * totalLp) / reserveUsdcValue;
-  const lpFromArcg = (arcg * totalLp) / reserveArcgValue;
+    const lpFromUsdc = (usdc * totalLp) / reserveUsdcValue;
+    const lpFromArcg = (arcg * totalLp) / reserveArcgValue;
 
-  const result = Math.min(lpFromUsdc, lpFromArcg);
-  return isNaN(result) ? "0.0000" : result.toFixed(4);
-};
-  // Approve USDC for Liquidity
-  // Lines 298 - 307: Approve USDC for Liquidity
-const handleApproveLiqUsdc = async () => {
-  if (parsedLiqUsdc === 0n) return;
-  resetTx(); // ശ്രദ്ധിക്കുക: resetTx-ൽ ഇൻപുട്ട് ഫീൽഡുകൾ ക്ലിയർ ചെയ്യുന്ന കോഡ് ഉണ്ടാകരുത്
+    const result = Math.min(lpFromUsdc, lpFromArcg);
+    return isNaN(result) ? "0.0000" : result.toFixed(4);
+  };
 
-  writeContract({
-    address: CONTRACT_ADDRESSES.USDC, // അല്ലെങ്കിൽ vUSDC address
-    abi: ERC20_ABI,
-    functionName: 'approve',
-    args: [CONTRACT_ADDRESSES.POOL, parsedLiqUsdc],
-  });
-};
+  const handleApproveLiqUsdc = async () => {
+    if (parsedLiqUsdc === 0n) return;
+    resetTx();
+    writeContract({
+      address: CONTRACT_ADDRESSES.USDC,
+      abi: ERC20_ABI,
+      functionName: 'approve',
+      args: [CONTRACT_ADDRESSES.POOL, parsedLiqUsdc],
+    });
+  };
 
-// Lines 310 - 319: Approve ARCG for Liquidity
-const handleApproveLiqArcg = async () => {
-  if (parsedLiqArcg === 0n) return;
-  resetTx();
+  const handleApproveLiqArcg = async () => {
+    if (parsedLiqArcg === 0n) return;
+    resetTx();
+    writeContract({
+      address: CONTRACT_ADDRESSES.ARCG,
+      abi: ERC20_ABI,
+      functionName: 'approve',
+      args: [CONTRACT_ADDRESSES.POOL, parsedLiqArcg],
+    });
+  };
 
-  writeContract({
-    address: CONTRACT_ADDRESSES.ARCG,
-    abi: ERC20_ABI,
-    functionName: 'approve',
-    args: [CONTRACT_ADDRESSES.POOL, parsedLiqArcg],
-  });
-};
+  const handleAddLiquidity = async () => {
+    if (parsedLiqUsdc === 0n || parsedLiqArcg === 0n) return;
+    resetTx();
+    writeContract({
+      address: CONTRACT_ADDRESSES.POOL,
+      abi: POOL_ABI,
+      functionName: 'addLiquidity',
+      args: [parsedLiqUsdc, parsedLiqArcg],
+    });
+  };
 
-// Lines 322 - 332: Add Liquidity execution
-const handleAddLiquidity = async () => {
-  if (parsedLiqUsdc === 0n || parsedLiqArcg === 0n) return;
-  resetTx();
-
-  writeContract({
-    address: CONTRACT_ADDRESSES.POOL,
-    abi: POOL_ABI,
-    functionName: 'addLiquidity',
-    args: [parsedLiqUsdc, parsedLiqArcg],
-  });
-};
-
-  // Remove Liquidity execution
   const handleRemoveLiquidity = async () => {
     if (!removeLpAmount || isNaN(parseFloat(removeLpAmount)) || parseFloat(removeLpAmount) <= 0) return;
     resetTx();
@@ -634,38 +532,34 @@ const handleAddLiquidity = async () => {
     });
   };
 
-   // Trigger refetches after any successful tx
-useEffect(() => {
-  if (isTxSuccess) {
-    refreshAllBalances();
-    refetchStakedBalance(); // <--- Staked Balance റിഫ്രഷ് ചെയ്യാൻ
-    refetchRewards();       // <--- Claim Rewards അപ്ഡേറ്റ് ചെയ്യാൻ
-    refetchSwapAllowance();
-    refetchLiqUsdcAllowance();
-    refetchLiqArcgAllowance();
-
-    setTimeout(() => {
+  useEffect(() => {
+    if (isTxSuccess) {
       refreshAllBalances();
       refetchStakedBalance();
       refetchRewards();
-    }, 800);
+      refetchSwapAllowance();
+      refetchLiqUsdcAllowance();
+      refetchLiqArcgAllowance();
 
-    // Clear input fields
-    setRemoveLpAmount('');
-    setSwapInput('');
-    setStakeAmount('');
-    setLiqUsdcInput('');
-    setLiqArcgInput('');
-  }
-}, [isTxSuccess]); 
-  // ----------------------------------------------------
-  // TAB 3: MOCK FAUCET MINTING
-  // ----------------------------------------------------
+      setTimeout(() => {
+        refreshAllBalances();
+        refetchStakedBalance();
+        refetchRewards();
+      }, 800);
+
+      setRemoveLpAmount('');
+      setSwapInput('');
+      setStakeAmount('');
+      setLiqUsdcInput('');
+      setLiqArcgInput('');
+    }
+  }, [isTxSuccess]); 
+
+  // FAUCET
   const handleMintTokens = async () => {  
     resetTx();
-    // Mint 100 Mock USDC (6 decimals)
     writeContract({
-      address: "0xf8f9E5BA0077a77B07D5c5A35473Da74A09b885f",
+      address: CONTRACT_ADDRESSES.USDC,
       abi: ERC20_ABI,
       functionName: 'mint',
       args: [address!, parseUnits("100", 6)],
@@ -674,20 +568,15 @@ useEffect(() => {
 
   const handleMintArcg = async () => {
     resetTx();
-    // Mint 1000 ARCG (18 decimals)
     writeContract({
-      address: "0x19a5E533c6c27c382A9dF2d52422D3F085647Ed0",
+      address: CONTRACT_ADDRESSES.ARCG,
       abi: ERC20_ABI,
       functionName: 'mint',
       args: [address!, parseUnits("1000", 18)],
     });
   };
 
-  // ----------------------------------------------------
-  // WALLET ACTIONS
-  // ----------------------------------------------------
   const handleConnectWallet = async () => {
-    // Injected wallet provider logic
     try {
       if (typeof window !== 'undefined' && (window as any).ethereum) {
         await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
@@ -703,9 +592,6 @@ useEffect(() => {
     switchChain({ chainId: arcTestnet.id });
   };
 
-  // ----------------------------------------------------
-  // UI COPY HELPERS
-  // ----------------------------------------------------
   const currentTokenInLabel = swapDirection === 'usdc-to-arcg' ? 'vUSDC' : 'ARCG';
   const currentTokenOutLabel = swapDirection === 'usdc-to-arcg' ? 'ARCG' : 'vUSDC';
   const currentBalanceIn = swapDirection === 'usdc-to-arcg' ? erc20UsdcBalance : arcgBalance;
@@ -713,7 +599,6 @@ useEffect(() => {
 
   return (
     <div className="app-container">
-      {/* Top Navigation / Header */}
       <header className="header">
         <a href="#" className="logo-container">
           <span className="logo-icon">🔄</span>
@@ -727,24 +612,22 @@ useEffect(() => {
               {isWrongNetwork ? 'Wrong Network' : 'Arc Testnet'}
             </div>
           )}
-           {isConnected && (
-    <button 
-      className="btn-icon-only" 
-      onClick={refreshAllBalances}
-      title="Refresh All Balances"
-      style={{ marginRight: '10px' }}
-    >
-      <RefreshCw size={18} />
-    </button>
-  )}
+          {isConnected && (
+            <button 
+              className="btn-icon-only" 
+              onClick={refreshAllBalances}
+              title="Refresh All Balances"
+              style={{ marginRight: '10px' }}
+            >
+              <RefreshCw size={18} />
+            </button>
+          )}
 
-    <WalletConnectButton />      
+          <WalletConnectButton />      
         </div>
       </header>
 
-      {/* Main content body */}
       <main className="main-content">
-        {/* Navigation Tabs */}
         <div className="tabs-container">
           <button 
             className={`tab-btn ${activeTab === 'swap' ? 'active' : ''}`}
@@ -759,26 +642,25 @@ useEffect(() => {
             Liquidity (LP)
           </button>
           <button
-  className={`tab-btn ${activeTab === 'stake' ? 'active' : ''}`}
-  onClick={() => setActiveTab('stake')}
->
-  Stake
-</button>
+            className={`tab-btn ${activeTab === 'stake' ? 'active' : ''}`}
+            onClick={() => setActiveTab('stake')}
+          >
+            Stake
+          </button>
           <button 
             className={`tab-btn ${activeTab === 'faucet' ? 'active' : ''}`}
             onClick={() => setActiveTab('faucet')}
           >
             Faucet
           </button> 
-         <button
-          className="tab-btn"
-          onClick={() => window.open('https://x.com/Scarfacedrop', '_blank')}
-        >
-          Contact
-        </button> 
+          <button
+            className="tab-btn"
+            onClick={() => window.open('https://x.com/Scarfacedrop', '_blank')}
+          >
+            Contact
+          </button> 
         </div>
 
-        {/* Global Network Guard Warning */}
         {isWrongNetwork ? (
           <div className="swap-card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
             <AlertCircle size={48} color="var(--color-error)" style={{ marginBottom: '1.5rem' }} />
@@ -791,7 +673,6 @@ useEffect(() => {
             </button>
           </div>
         ) : !isConnected ? (
-          /* Connect Wallet landing state */
           <div className="swap-card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
             <Coins size={48} color="var(--color-primary)" style={{ marginBottom: '1.5rem', animation: 'float 3s ease-in-out infinite' }} />
             <h2 style={{ fontFamily: 'var(--font-outfit)', fontSize: '1.5rem', marginBottom: '0.75rem' }}>Welcome to VeloxSwap</h2>
@@ -803,10 +684,8 @@ useEffect(() => {
             </button>
           </div>
         ) : (
-          /* Main Trading Interfaces */
           <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             
-            {/* SWAP TAB */}
             {activeTab === 'swap' && (
               <div className="swap-card">
                 <div className="card-title-row">
@@ -816,7 +695,6 @@ useEffect(() => {
                   </button>
                 </div>
 
-                {/* Input Token A */}
                 <div className="input-group">
                   <div className="balance-row">
                     <span>From</span>
@@ -830,7 +708,15 @@ useEffect(() => {
                       className="token-input" 
                       placeholder="0.0" 
                       value={swapInput}
-                      onChange={(e) => setSwapInput(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSwapInput(val);
+                        try {
+                          setSwapRawInput(val ? parseUnits(val, tokenInDecimals) : null);
+                        } catch {
+                          setSwapRawInput(null);
+                        }
+                      }}
                     />
                     <div className="token-selector">
                       <span className="token-logo">{swapDirection === 'usdc-to-arcg' ? '💵' : '🪙'}</span>
@@ -840,20 +726,29 @@ useEffect(() => {
                   <div style={{ textAlign: 'right' }}>
                     <button 
                       className="btn-max" 
-                      onClick={() => setSwapInput(currentBalanceIn)}
+                      onClick={() => {
+                        const rawBal = swapDirection === 'usdc-to-arcg' ? erc20UsdcRaw : arcgRaw;
+                        if (!rawBal) return;
+
+                        setSwapRawInput(BigInt(rawBal as any));
+                        const formatted = formatUnits(BigInt(rawBal as any), tokenInDecimals);
+                        const parts = formatted.split('.');
+                        const truncated = parts[1] ? `${parts[0]}.${parts[1].slice(0, 4)}` : parts[0];
+                        setSwapInput(truncated);
+                      }}
                     >
                       Max
                     </button>
                   </div>
                 </div>
 
-                {/* Switch Direction Button */}
                 <div className="arrow-divider">
                   <button 
                     className="btn-switch-direction" 
                     onClick={() => {
                       setSwapDirection(prev => prev === 'usdc-to-arcg' ? 'arcg-to-usdc' : 'usdc-to-arcg');
                       setSwapInput('');
+                      setSwapRawInput(null);
                       setSwapOutput('0');
                     }}
                   >
@@ -861,7 +756,6 @@ useEffect(() => {
                   </button>
                 </div>
 
-                {/* Output Token B */}
                 <div className="input-group" style={{ marginTop: '0.5rem' }}>
                   <div className="balance-row">
                     <span>To (Estimated)</span>
@@ -874,15 +768,15 @@ useEffect(() => {
                       type="text" 
                       className="token-input" 
                       readOnly 
-                     value={
-          !hasReservesLoaded
-            ? 'Loading...'
-            : !hasLiquidity
-            ? 'No Liquidity'
-            : isNaN(parseFloat(swapOutput))
-            ? '0.0'
-            : swapOutput
-        } 
+                      value={
+                        !hasReservesLoaded
+                          ? 'Loading...'
+                          : !hasLiquidity
+                          ? 'No Liquidity'
+                          : isNaN(parseFloat(swapOutput))
+                          ? '0.0'
+                          : swapOutput
+                      } 
                     />
                     <div className="token-selector">
                       <span className="token-logo">{swapDirection === 'usdc-to-arcg' ? '🪙' : '💵'}</span>
@@ -891,7 +785,6 @@ useEffect(() => {
                   </div>
                 </div>
 
-                {/* Transaction details breakdown */}
                 {parseFloat(swapInput) > 0 && hasLiquidity && ( 
                   <div className="details-container">
                     <div className="detail-item">
@@ -909,13 +802,13 @@ useEffect(() => {
                     <div className="detail-item">
                       <span>Liquidity Provider Fee (0.3%)</span>
                       <span className="detail-value">
-                      {(parseFloat(swapInput) * 0.003).toFixed(5)} {currentTokenInLabel}
-                     </span>
+                        {(parseFloat(swapInput) * 0.003).toFixed(5)} {currentTokenInLabel}
+                      </span>
                     </div>
                   </div>
                 )}
 
-                {/* Gas Token Balance Warning */}
+                {/* Gas Warning Container */}
                 {parseFloat(nativeGasBalance) < 0.1 && (
                   <div className="gas-warning">
                     <AlertCircle size={16} style={{ flexShrink: 0 }} />
@@ -925,7 +818,6 @@ useEffect(() => {
                   </div>
                 )}
 
-                {/* Action Buttons */}
                 <div style={{ marginTop: '1.25rem' }}>
                   {needsSwapApproval ? (
                     <button 
@@ -933,9 +825,7 @@ useEffect(() => {
                       onClick={handleApproveSwap} 
                       disabled={isTxPending || isTxConfirming}
                     >
-                      {isTxPending || isTxConfirming ? (
-                        <RefreshCw size={18} className="spin" />
-                      ) : null}
+                      {isTxPending || isTxConfirming ? <RefreshCw size={18} className="spin" /> : null}
                       Approve {currentTokenInLabel}
                     </button>
                   ) : (
@@ -944,9 +834,7 @@ useEffect(() => {
                       onClick={handleSwap} 
                       disabled={!swapInput || swapOutput === '0' || swapOutput === 'No Liquidity' || isTxPending || isTxConfirming || parseFloat(currentBalanceIn) < parseFloat(swapInput)}
                     >
-                      {isTxPending || isTxConfirming ? (
-                        <RefreshCw size={18} className="spin" />
-                      ) : null}
+                      {isTxPending || isTxConfirming ? <RefreshCw size={18} className="spin" /> : null}
                       {parseFloat(currentBalanceIn) < parseFloat(swapInput) ? 'Insufficient Balance' : 'Swap Assets'}
                     </button>
                   )}
@@ -954,7 +842,6 @@ useEffect(() => {
               </div>
             )}
 
-            {/* LIQUIDITY TAB */}
             {activeTab === 'liquidity' && (
               <div className="swap-card">
                 <div className="card-title-row">
@@ -978,26 +865,24 @@ useEffect(() => {
                 </div>
 
                 {!isRemovingLiquidity ? (
-                  /* ADD LIQUIDITY FORM */
                   <div>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
                       Deposit equal values of vUSDC and ARCG to earn 0.3% fees on swaps.
                     </p>
 
-                    {/* Deposit vUSDC Input */}
                     <div className="input-group">
                       <div className="balance-row">
                         <span>vUSDC Amount (6 Decimals)</span>
                         <span>Balance: {erc20UsdcBalance} vUSDC</span>
                       </div>
                       <div className="input-row">
-                      <input 
-                        type="text"
-                        className="token-input"
-                        placeholder="0.0"
-                        value={liqUsdcInput} 
-                        onChange={(e) => handleLiqUsdcChange(e.target.value)} // 
-                       />  
+                        <input 
+                          type="text"
+                          className="token-input"
+                          placeholder="0.0"
+                          value={liqUsdcInput} 
+                          onChange={(e) => handleLiqUsdcChange(e.target.value)} 
+                        />  
                         <div className="token-selector">💵 vUSDC</div>
                       </div>
                     </div>
@@ -1006,7 +891,6 @@ useEffect(() => {
                       <Plus size={16} color="var(--text-secondary)" />
                     </div>
 
-                    {/* Deposit ARCG Input */}
                     <div className="input-group">
                       <div className="balance-row">
                         <span>ARCG Amount (18 Decimals)</span>
@@ -1018,7 +902,7 @@ useEffect(() => {
                           className="token-input"
                           placeholder="0.0"
                           value={liqArcgInput} 
-                          onChange={(e) => handleLiqArcgChange(e.target.value)} //
+                          onChange={(e) => handleLiqArcgChange(e.target.value)}
                         />
                         <div className="token-selector">🪙 ARCG</div>
                       </div>
@@ -1055,7 +939,6 @@ useEffect(() => {
                     </div>
                   </div>
                 ) : (
-                  /* REMOVE LIQUIDITY FORM */
                   <div>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
                       Burn your LP tokens to withdraw your share of vUSDC and ARCG from the pool.
@@ -1112,7 +995,6 @@ useEffect(() => {
                   </div>
                 )}
 
-                {/* Pool Status Statistics */}
                 <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '1.25rem' }}>
                   <h3 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', fontFamily: 'var(--font-outfit)' }}>Current Pool Reserves</h3>
                   <div className="lp-grid">
@@ -1130,198 +1012,192 @@ useEffect(() => {
                     <div className="lp-stat-value">{lpTotalSupply.toFixed(4)} LP</div>
                   </div>
                 </div>
-
               </div>
             )}
-            {/* STAKING TAB */}
-        {activeTab === 'stake' && (
-        <div className="swap-card">
-          <div className="card-title-row" style={{ display: 'block' }}>
-            <h2>vUSDC Staking</h2>
-            <span style={{ fontSize: '0.85rem', color: '#34d399', marginTop: '4px', display: 'block' }}>
-            3% APY Staking Reward • Earn VXC token rewards by staking your vUSDC
-          </span> 
-          </div>
 
-              {/* Staked Balance & Earned Rewards Displays */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.75rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#888' }}>Staked vUSDC</span>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff', marginTop: '0.2rem' }}>
-                    {stakedBalanceFormatted}
+            {activeTab === 'stake' && (
+              <div className="swap-card">
+                <div className="card-title-row" style={{ display: 'block' }}>
+                  <h2>vUSDC Staking</h2>
+                  <span style={{ fontSize: '0.85rem', color: '#34d399', marginTop: '4px', display: 'block' }}>
+                    3% APY Staking Reward • Earn VXC token rewards by staking your vUSDC
+                  </span> 
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.75rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#888' }}>Staked vUSDC</span>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fff', marginTop: '0.2rem' }}>
+                      {stakedBalanceFormatted}
+                    </div>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.75rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#888' }}>Earned VXC</span>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#10b981', marginTop: '0.2rem' }}>
+                      {earnedRewardFormatted}
+                    </div>
                   </div>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.75rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#888' }}>Earned VXC</span>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#10b981', marginTop: '0.2rem' }}>
-                    {earnedRewardFormatted}
+
+                <div className="input-group">
+                  <div className="balance-row" style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '0.4rem' }}>
+                    <span style={{ color: '#aaa', fontSize: '0.85rem' }}>Amount</span>
+                    <span style={{ color: '#888', fontSize: '0.8rem' }}>
+                      Wallet: <strong style={{ color: '#fff' }}>{erc20UsdcBalance || '0.00'} vUSDC</strong>
+                    </span>
+                  </div>
+                  <div className="input-row"> 
+                    <input
+                      type="number"
+                      className="token-input"
+                      placeholder="0.0"
+                      value={stakeAmount}
+                      onChange={(e) => setStakeAmount(e.target.value)}
+                    />
+                    <div className="token-selector">
+                      <span className="token-logo">vUSDC</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Input Field with Wallet Balance Display */}
-              <div className="input-group">
-                <div className="balance-row" style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '0.4rem' }}>
-                  <span style={{ color: '#aaa', fontSize: '0.85rem' }}>Amount</span>
-                  <span style={{ color: '#888', fontSize: '0.8rem' }}>
-                    Wallet: <strong style={{ color: '#fff' }}>{erc20UsdcBalance || '0.00'} vUSDC</strong>
-                  </span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                  <button
+                    className="btn-connect"
+                    onClick={handleApproveAndStake}
+                    disabled={
+                      isProcessing ||
+                      !stakeAmount ||
+                      Number(stakeAmount) <= 0 ||
+                      Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance)
+                    }
+                    style={{
+                      background:
+                        Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance)
+                          ? 'rgb(75, 85, 99)'
+                          : isProcessing
+                          ? '#6b7280'
+                          : '#8b5cf6',
+                      fontSize: '0.85rem',
+                      padding: '0.6rem 0.2rem',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      width: '100%',
+                      cursor:
+                        Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance) || isProcessing
+                          ? 'not-allowed'
+                          : 'pointer',
+                      opacity:
+                        Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance) || isProcessing
+                          ? 0.6
+                          : 1,
+                    }}
+                  >
+                    {isProcessing
+                      ? 'Processing...'
+                      : Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance)
+                      ? 'Insufficient Balance'
+                      : 'Approve & Stake'}
+                  </button>
+
+                  <button
+                    className="btn-connect"
+                    onClick={handleWithdraw}
+                    disabled={
+                      isUnstaking || 
+                      !stakeAmount || 
+                      Number(stakeAmount) <= 0 || 
+                      Number(stakeAmount) > Number(stakedBalanceFormatted)
+                    }
+                    style={{
+                      background: (Number(stakeAmount) > Number(stakedBalanceFormatted)) 
+                        ? 'rgb(75, 85, 99)' 
+                        : '#ef4444',
+                      fontSize: '0.85rem',
+                      padding: '0.6rem 0.2rem',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      width: '100%',
+                      cursor: (Number(stakeAmount) > Number(stakedBalanceFormatted) || isUnstaking) 
+                        ? 'not-allowed' 
+                        : 'pointer',
+                      opacity: (Number(stakeAmount) > Number(stakedBalanceFormatted) || isUnstaking) 
+                        ? 0.6 
+                        : 1,
+                    }}
+                  >
+                    {isUnstaking 
+                      ? 'Processing...' 
+                      : (Number(stakeAmount) > Number(stakedBalanceFormatted)) 
+                        ? 'Insufficient Balance' 
+                        : 'Unstake'}
+                  </button>
                 </div>
-                <div className="input-row"> 
-                  <input
-                    type="number"
-                    className="token-input"
-                    placeholder="0.0"
-                    value={stakeAmount}
-                    onChange={(e) => setStakeAmount(e.target.value)}
-                  />
-                  <div className="token-selector">
-                    <span className="token-logo">vUSDC</span>
+
+                <div style={{ width: '100%', marginTop: '0.75rem' }}>
+                  <button
+                    className="btn-connect"
+                    onClick={handleClaim}
+                    disabled={!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0}
+                    style={{
+                      width: '100%',
+                      background: Number(earnedRewardFormatted) <= 0 ? 'rgb(75, 85, 99)' : '#10b981',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      padding: '0.6rem 0.2rem',
+                      fontSize: '0.85rem',
+                      cursor: Number(earnedRewardFormatted) <= 0 ? 'not-allowed' : 'pointer',
+                      opacity: Number(earnedRewardFormatted) <= 0 ? 0.6 : 1,
+                    }}
+                  >
+                    Claim VXC Rewards
+                  </button>
+                </div> 
+
+                {stakeTxHash && (
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '10px 14px',
+                    backgroundColor: 'rgba(6, 78, 59, 0.25)',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    borderRadius: '10px',
+                    textAlign: 'left'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#34d399', fontWeight: '600', fontSize: '12px' }}>
+                      <CheckCircle style={{ width: '14px', height: '14px', flexShrink: 0 }} />
+                      <span>Transaction Success!</span>
+                    </div>
+                    <p style={{ margin: '3px 0 0 0', fontSize: '10px', color: '#9ca3af', fontWeight: '400' }}>
+                      Your request was completed with sub-second finality.
+                    </p>
+                    <a
+                      href={`https://testnet.arcscan.app/tx/${stakeTxHash}`} 
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        color: '#38bdf8',
+                        fontSize: '10px',
+                        marginTop: '4px',
+                        fontWeight: '500',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      View on Explorer <ExternalLink style={{ width: '10px', height: '10px' }} />
+                    </a>
                   </div>
-                </div>
+                )} 
               </div>
-{/* Action Buttons: Stake & Unstake */}
-<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-  {/* Approve & Stake Button */}
-  <button
-    className="btn-connect"
-    onClick={handleApproveAndStake}
-    disabled={
-      isProcessing ||
-      !stakeAmount ||
-      Number(stakeAmount) <= 0 ||
-      Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance)
-    }
-    style={{
-      background:
-        Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance)
-          ? 'rgb(75, 85, 99)'
-          : isProcessing
-          ? '#6b7280'
-          : '#8b5cf6',
-      fontSize: '0.85rem',
-      padding: '0.6rem 0.2rem',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      textAlign: 'center',
-      width: '100%',
-      cursor:
-        Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance) || isProcessing
-          ? 'not-allowed'
-          : 'pointer',
-      opacity:
-        Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance) || isProcessing
-          ? 0.6
-          : 1,
-    }}
-  >
-    {isProcessing
-      ? 'Processing...'
-      : Number(stakeAmount) > Number(erc20UsdcBalance === 'Loading...' ? 0 : erc20UsdcBalance)
-      ? 'Insufficient Balance'
-      : 'Approve & Stake'}
-  </button>
-  {/* Unstake Button */}
-<button
-  className="btn-connect"
-  onClick={handleWithdraw}
-  disabled={
-    isUnstaking || 
-    !stakeAmount || 
-    Number(stakeAmount) <= 0 || 
-    Number(stakeAmount) > Number(stakedBalanceFormatted)
-  }
-  style={{
-    background: (Number(stakeAmount) > Number(stakedBalanceFormatted)) 
-      ? 'rgb(75, 85, 99)' 
-      : '#ef4444',
-    fontSize: '0.85rem',
-    padding: '0.6rem 0.2rem',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    textAlign: 'center',
-    width: '100%',
-    cursor: (Number(stakeAmount) > Number(stakedBalanceFormatted) || isUnstaking) 
-      ? 'not-allowed' 
-      : 'pointer',
-    opacity: (Number(stakeAmount) > Number(stakedBalanceFormatted) || isUnstaking) 
-      ? 0.6 
-      : 1,
-  }}
->
-  {isUnstaking 
-    ? 'Processing...' 
-    : (Number(stakeAmount) > Number(stakedBalanceFormatted)) 
-      ? 'Insufficient Balance' 
-      : 'Unstake'}
-</button>
-</div>
+            )}
 
-{/* Claim Rewards Button - Separate Full Width */}
-<div style={{ width: '100%', marginTop: '0.75rem' }}>
-  <button
-    className="btn-connect"
-    onClick={handleClaim}
-    disabled={!earnedRewardFormatted || Number(earnedRewardFormatted) <= 0}
-    style={{
-      width: '100%',
-      background: Number(earnedRewardFormatted) <= 0 ? 'rgb(75, 85, 99)' : '#10b981',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      textAlign: 'center',
-      padding: '0.6rem 0.2rem',
-      fontSize: '0.85rem',
-      cursor: Number(earnedRewardFormatted) <= 0 ? 'not-allowed' : 'pointer',
-      opacity: Number(earnedRewardFormatted) <= 0 ? 0.6 : 1,
-    }}
-  >
-    Claim VXC Rewards
-  </button>
-</div> 
-         
-       {stakeTxHash && (
-            <div style={{
-              marginTop: '12px',
-              padding: '10px 14px',
-              backgroundColor: 'rgba(6, 78, 59, 0.25)',
-              border: '1px solid rgba(16, 185, 129, 0.4)',
-              borderRadius: '10px',
-              textAlign: 'left'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#34d399', fontWeight: '600', fontSize: '12px' }}>
-                <CheckCircle style={{ width: '14px', height: '14px', flexShrink: 0 }} />
-                <span>Transaction Success!</span>
-              </div>
-              <p style={{ margin: '3px 0 0 0', fontSize: '10px', color: '#9ca3af', fontWeight: '400' }}>
-                Your request was completed with sub-second finality.
-              </p>
-              <a
-                href={`https://testnet.arcscan.app/tx/${stakeTxHash}`} 
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  color: '#38bdf8',
-                  fontSize: '10px',
-                  marginTop: '4px',
-                  fontWeight: '500',
-                  textDecoration: 'none'
-                }}
-              >
-                View on Explorer <ExternalLink style={{ width: '10px', height: '10px' }} />
-              </a>
-            </div>
-          )} 
-        </div>
-    )}
-
-    {/* FAUCET TAB */}
-    {activeTab === 'faucet' && (
+            {activeTab === 'faucet' && (
               <div className="swap-card" style={{ textAlign: 'center' }}>
                 <Coins size={40} color="var(--color-secondary)" style={{ marginBottom: '1rem' }} />
                 <h2>Arc Testnet Faucet</h2>
@@ -1371,8 +1247,6 @@ useEffect(() => {
 
             {/* TRANSACTIONS STATUS BLOCK */}
             <div style={{ width: '100%', maxWidth: '480px' }}>
-              
-              {/* Transaction Confirming / Confirming Loading Toast */}
               {(isTxPending || isTxConfirming) && (
                 <div className="status-box">
                   <div className="status-header">
@@ -1390,7 +1264,6 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* Transaction Success Alert */}
               {isTxSuccess && txHash && (
                 <div className="status-box" style={{ borderColor: 'rgba(16, 185, 129, 0.3)', background: 'rgba(16, 185, 129, 0.05)' }}>
                   <div className="status-header" style={{ color: 'var(--color-success)' }}>
@@ -1406,7 +1279,6 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* Transaction Fail Alert */}
               {txError && (
                 <div className="status-box" style={{ borderColor: 'rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.05)' }}>
                   <div className="status-header" style={{ color: 'var(--color-error)' }}>
@@ -1449,6 +1321,5 @@ useEffect(() => {
         )}
       </main>
     </div>
-);
-}
-
+  );
+} 
