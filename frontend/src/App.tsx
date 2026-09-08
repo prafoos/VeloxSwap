@@ -550,6 +550,7 @@ export default function App(): JSX.Element {
       setRemoveLpAmount('');
       setSwapInput('');
       setStakeAmount('');
+      setSwapRawInput(null); 
       setLiqUsdcInput('');
       setLiqArcgInput('');
     }
