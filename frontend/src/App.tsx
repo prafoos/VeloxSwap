@@ -196,6 +196,7 @@ console.log("✅ Final Parsed Earned VXC:", formattedEarnedVXC);
   const { writeContractAsync } = useWriteContract();
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isUnstaking, setIsUnstaking] = useState(false);
 
 // Allowance ചെക്ക് (മറ്റ് useReadContract-കൾക്ക് സമീപം വയ്ക്കുക)
   const { 
@@ -277,6 +278,7 @@ const handleWithdraw = async () => {
     return;
   }
 
+  setIsUnstaking(true);
   try {
     const amountParsed = parseUnits(stakeAmount, 6);
 
@@ -295,6 +297,8 @@ setStakeAmount('');
     queryClient.invalidateQueries();
   } catch (err) {
     console.error('Unstake Error:', err);
+  } finally {
+    setIsUnstaking(false);
   }
 }; 
 
@@ -1218,27 +1222,41 @@ useEffect(() => {
       ? 'Insufficient Balance'
       : 'Approve & Stake'}
   </button>
-
   {/* Unstake Button */}
-  <button
-    className="btn-connect"
-    onClick={handleWithdraw}
-    disabled={isProcessing || Number(rawStakedBalance) <= 0}
-    style={{
-      background: Number(rawStakedBalance) <= 0 ? 'rgb(75, 85, 99)' : '#ef4444',
-      fontSize: '0.85rem',
-      padding: '0.6rem 0.2rem',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      textAlign: 'center',
-      width: '100%',
-      cursor: Number(rawStakedBalance) <= 0 ? 'not-allowed' : 'pointer',
-      opacity: Number(rawStakedBalance) <= 0 ? 0.6 : 1,
-    }}
-  >
-    Unstake
-  </button>
+<button
+  className="btn-connect"
+  onClick={handleWithdraw}
+  disabled={
+    isUnstaking || 
+    !stakeAmount || 
+    Number(stakeAmount) <= 0 || 
+    Number(stakeAmount) > Number(stakedBalanceFormatted)
+  }
+  style={{
+    background: (Number(stakeAmount) > Number(stakedBalanceFormatted)) 
+      ? 'rgb(75, 85, 99)' 
+      : '#ef4444',
+    fontSize: '0.85rem',
+    padding: '0.6rem 0.2rem',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    textAlign: 'center',
+    width: '100%',
+    cursor: (Number(stakeAmount) > Number(stakedBalanceFormatted) || isUnstaking) 
+      ? 'not-allowed' 
+      : 'pointer',
+    opacity: (Number(stakeAmount) > Number(stakedBalanceFormatted) || isUnstaking) 
+      ? 0.6 
+      : 1,
+  }}
+>
+  {isUnstaking 
+    ? 'Processing...' 
+    : (Number(stakeAmount) > Number(stakedBalanceFormatted)) 
+      ? 'Insufficient Balance' 
+      : 'Unstake'}
+</button>
 </div>
 
 {/* Claim Rewards Button - Separate Full Width */}
