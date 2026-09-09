@@ -546,6 +546,15 @@ export default function App(): JSX.Element {
   const hasEnoughLiqArcg =
     arcgRaw !== undefined && parsedLiqArcg <= (arcgRaw as bigint);
 
+  // Add Liquidity is only allowed when BOTH token balances are available.
+  // Keep this based on the exact raw on-chain balances so a zero ARCG
+  // balance can never make the Add Liquidity action appear/callable.
+  const canAddLiquidity =
+    parsedLiqUsdc > 0n &&
+    parsedLiqArcg > 0n &&
+    hasEnoughLiqUsdc &&
+    hasEnoughLiqArcg;
+
   const handleMaxLiqUsdc = () => {
     if (erc20UsdcRaw === undefined || arcgRaw === undefined) return;
 
@@ -616,7 +625,7 @@ export default function App(): JSX.Element {
   };
 
   const handleApproveLiqUsdc = async () => {
-    if (parsedLiqUsdc === 0n) return;
+    if (parsedLiqUsdc === 0n || !hasEnoughLiqUsdc || !hasEnoughLiqArcg) return;
     setLiquidityTxAction('approve-usdc');
     resetTx();
     writeContract({
@@ -628,7 +637,7 @@ export default function App(): JSX.Element {
   };
 
   const handleApproveLiqArcg = async () => {
-    if (parsedLiqArcg === 0n) return;
+    if (parsedLiqArcg === 0n || !hasEnoughLiqUsdc || !hasEnoughLiqArcg) return;
     setLiquidityTxAction('approve-arcg');
     resetTx();
     writeContract({
@@ -803,7 +812,7 @@ export default function App(): JSX.Element {
         </div>
       </header>
 
-      <main className="main-content">
+      <div className="main-content">
         <div className="tabs-container">
           <button 
             className={`tab-btn ${activeTab === 'swap' ? 'active' : ''}`}
@@ -1105,28 +1114,58 @@ export default function App(): JSX.Element {
                     )}
 
                     <div style={{ marginTop: '1.25rem' }}>
-                      {needsLiqUsdcApprove ? (
-                        <button className="btn-action" onClick={handleApproveLiqUsdc} disabled={isTxPending || isTxConfirming}>
+                      {/*
+                        IMPORTANT:
+                        Never show an approval action or an enabled Add Liquidity
+                        action when either wallet token balance is insufficient.
+                        This prevents the ARCG=0 case from looking actionable.
+                      */}
+                      {!hasEnoughLiqUsdc || !hasEnoughLiqArcg ? (
+                        <button
+                          className="btn-action"
+                          disabled={true}
+                          style={{
+                            cursor: 'not-allowed',
+                            opacity: 0.6,
+                          }}
+                        >
+                          Insufficient Balance
+                        </button>
+                      ) : needsLiqUsdcApprove ? (
+                        <button
+                          className="btn-action"
+                          onClick={handleApproveLiqUsdc}
+                          disabled={isTxPending || isTxConfirming || !canAddLiquidity}
+                        >
                           Approve vUSDC
                         </button>
                       ) : needsLiqArcgApprove ? (
-                        <button className="btn-action" onClick={handleApproveLiqArcg} disabled={isTxPending || isTxConfirming}>
+                        <button
+                          className="btn-action"
+                          onClick={handleApproveLiqArcg}
+                          disabled={isTxPending || isTxConfirming || !canAddLiquidity}
+                        >
                           Approve ARCG
                         </button>
                       ) : (
-                        <button 
-                          className="btn-action" 
-                          onClick={handleAddLiquidity} 
+                        <button
+                          className="btn-action"
+                          onClick={handleAddLiquidity}
                           disabled={
-                            !liqUsdcInput ||
-                            !liqArcgInput ||
-                            parsedLiqUsdc === 0n ||
-                            parsedLiqArcg === 0n ||
-                            !hasEnoughLiqUsdc ||
-                            !hasEnoughLiqArcg ||
+                            !canAddLiquidity ||
                             isTxPending ||
                             isTxConfirming
                           }
+                          style={{
+                            cursor:
+                              !canAddLiquidity || isTxPending || isTxConfirming
+                                ? 'not-allowed'
+                                : 'pointer',
+                            opacity:
+                              !canAddLiquidity || isTxPending || isTxConfirming
+                                ? 0.6
+                                : 1,
+                          }}
                         >
                           {isTxPending || isTxConfirming ? <RefreshCw size={18} className="spin" /> : <Droplet size={18} />}
                           Add Liquidity
@@ -1205,7 +1244,8 @@ export default function App(): JSX.Element {
                           lpBalanceRaw === 0n ||
                           (() => {
                             try {
-                              return parseUnits(removeLpAmount, 18) > lpBalanceRaw;
+                              const parsedRemoveLpAmount = parseUnits(removeLpAmount, 18);
+                              return parsedRemoveLpAmount <= 0n || parsedRemoveLpAmount > lpBalanceRaw;
                             } catch {
                               return true;
                             }
@@ -1543,7 +1583,7 @@ export default function App(): JSX.Element {
 
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
-}  
+}   
