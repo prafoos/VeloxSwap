@@ -95,6 +95,9 @@ export default function App(): JSX.Element {
     args: address ? [address] : undefined,
   });
   const lpBalance = lpRaw ? parseFloat(formatUnits(lpRaw, 18)).toFixed(4) : "0.0000";
+  // Keep the exact on-chain LP balance separately. The UI value above is rounded
+  // for display only and must never be used to construct the removal amount.
+  const lpBalanceRaw = lpRaw ?? 0n;
 
   // 5. Total LP Token Supply
   const { data: lpTotalSupplyRaw, refetch: refetchLpSupply } = useReadContract({
@@ -416,6 +419,12 @@ export default function App(): JSX.Element {
   const [isRemovingLiquidity, setIsRemovingLiquidity] = useState<boolean>(false);
   const [removeLpAmount, setRemoveLpAmount] = useState<string>('');
 
+  // Track which liquidity transaction is running so an approval success
+  // does not clear the user's liquidity inputs before Add Liquidity.
+  const [liquidityTxAction, setLiquidityTxAction] = useState<
+    'approve-usdc' | 'approve-arcg' | 'add' | 'remove' | ''
+  >('');
+
   const handleLiqUsdcChange = (value: string) => {
     setLiqUsdcInput(value);
     if (value === '' || isNaN(Number(value))) {
@@ -460,11 +469,92 @@ export default function App(): JSX.Element {
     args: address ? [address, CONTRACT_ADDRESSES.POOL] : undefined,
   });
 
-  const parsedLiqUsdc = liqUsdcInput && !isNaN(parseFloat(liqUsdcInput)) ? parseUnits(liqUsdcInput, 6) : 0n;
-  const parsedLiqArcg = liqArcgInput && !isNaN(parseFloat(liqArcgInput)) ? parseUnits(liqArcgInput, 18) : 0n;
+  // Parse liquidity amounts safely. Invalid/over-precision input should
+  // never crash the component during render.
+  const parsedLiqUsdc = (() => {
+    if (!liqUsdcInput || isNaN(parseFloat(liqUsdcInput))) return 0n;
+    try {
+      return parseUnits(liqUsdcInput, 6);
+    } catch {
+      return 0n;
+    }
+  })();
 
-  const needsLiqUsdcApprove = liqUsdcAllowanceRaw !== undefined && parsedLiqUsdc > 0n && liqUsdcAllowanceRaw < parsedLiqUsdc;
-  const needsLiqArcgApprove = liqArcgAllowanceRaw !== undefined && parsedLiqArcg > 0n && liqArcgAllowanceRaw < parsedLiqArcg;
+  const parsedLiqArcg = (() => {
+    if (!liqArcgInput || isNaN(parseFloat(liqArcgInput))) return 0n;
+    try {
+      return parseUnits(liqArcgInput, 18);
+    } catch {
+      return 0n;
+    }
+  })();
+
+  const needsLiqUsdcApprove =
+    liqUsdcAllowanceRaw !== undefined &&
+    parsedLiqUsdc > 0n &&
+    liqUsdcAllowanceRaw < parsedLiqUsdc;
+
+  const needsLiqArcgApprove =
+    liqArcgAllowanceRaw !== undefined &&
+    parsedLiqArcg > 0n &&
+    liqArcgAllowanceRaw < parsedLiqArcg;
+
+  // Use raw token balances for validation. The displayed balances are rounded,
+  // so comparing against the formatted strings can incorrectly disable/enable
+  // the button at the exact wallet balance.
+  const hasEnoughLiqUsdc =
+    erc20UsdcRaw !== undefined && parsedLiqUsdc <= (erc20UsdcRaw as bigint);
+
+  const hasEnoughLiqArcg =
+    arcgRaw !== undefined && parsedLiqArcg <= (arcgRaw as bigint);
+
+  const handleMaxLiqUsdc = () => {
+    if (erc20UsdcRaw === undefined || arcgRaw === undefined) return;
+
+    let usdcAmount = BigInt(erc20UsdcRaw as any);
+    let arcgAmount = 0n;
+
+    if (reserveUsdc > 0n && reserveArcg > 0n) {
+      arcgAmount = (usdcAmount * reserveArcg) / reserveUsdc;
+
+      // If the matching ARCG amount is larger than the wallet balance,
+      // reduce the USDC side so the pair remains valid and spendable.
+      if (arcgAmount > BigInt(arcgRaw as any)) {
+        arcgAmount = BigInt(arcgRaw as any);
+        usdcAmount = (arcgAmount * reserveUsdc) / reserveArcg;
+      }
+    } else {
+      // For an empty/new pool there is no existing ratio to calculate.
+      arcgAmount = BigInt(arcgRaw as any);
+    }
+
+    setLiqUsdcInput(formatUnits(usdcAmount, 6));
+    setLiqArcgInput(formatUnits(arcgAmount, 18));
+  };
+
+  const handleMaxLiqArcg = () => {
+    if (erc20UsdcRaw === undefined || arcgRaw === undefined) return;
+
+    let arcgAmount = BigInt(arcgRaw as any);
+    let usdcAmount = 0n;
+
+    if (reserveUsdc > 0n && reserveArcg > 0n) {
+      usdcAmount = (arcgAmount * reserveUsdc) / reserveArcg;
+
+      // If the matching USDC amount is larger than the wallet balance,
+      // reduce the ARCG side so the pair remains valid and spendable.
+      if (usdcAmount > BigInt(erc20UsdcRaw as any)) {
+        usdcAmount = BigInt(erc20UsdcRaw as any);
+        arcgAmount = (usdcAmount * reserveArcg) / reserveUsdc;
+      }
+    } else {
+      // For an empty/new pool there is no existing ratio to calculate.
+      usdcAmount = BigInt(erc20UsdcRaw as any);
+    }
+
+    setLiqUsdcInput(formatUnits(usdcAmount, 6));
+    setLiqArcgInput(formatUnits(arcgAmount, 18));
+  };
 
   const calculateExpectedLp = () => {
     const usdc = parseFloat(liqUsdcInput);
@@ -489,6 +579,7 @@ export default function App(): JSX.Element {
 
   const handleApproveLiqUsdc = async () => {
     if (parsedLiqUsdc === 0n) return;
+    setLiquidityTxAction('approve-usdc');
     resetTx();
     writeContract({
       address: CONTRACT_ADDRESSES.USDC,
@@ -500,6 +591,7 @@ export default function App(): JSX.Element {
 
   const handleApproveLiqArcg = async () => {
     if (parsedLiqArcg === 0n) return;
+    setLiquidityTxAction('approve-arcg');
     resetTx();
     writeContract({
       address: CONTRACT_ADDRESSES.ARCG,
@@ -510,7 +602,14 @@ export default function App(): JSX.Element {
   };
 
   const handleAddLiquidity = async () => {
-    if (parsedLiqUsdc === 0n || parsedLiqArcg === 0n) return;
+    if (
+      parsedLiqUsdc === 0n ||
+      parsedLiqArcg === 0n ||
+      !hasEnoughLiqUsdc ||
+      !hasEnoughLiqArcg
+    ) return;
+
+    setLiquidityTxAction('add');
     resetTx();
     writeContract({
       address: CONTRACT_ADDRESSES.POOL,
@@ -522,8 +621,29 @@ export default function App(): JSX.Element {
 
   const handleRemoveLiquidity = async () => {
     if (!removeLpAmount || isNaN(parseFloat(removeLpAmount)) || parseFloat(removeLpAmount) <= 0) return;
+
+    let parsedLpAmount: bigint;
+    try {
+      parsedLpAmount = parseUnits(removeLpAmount, 18);
+    } catch {
+      return;
+    }
+
+    // Never send more LP than the wallet actually owns. The displayed LP
+    // balance is rounded, so using it directly can create a tiny over-balance
+    // amount and make the transaction revert.
+    if (lpBalanceRaw === 0n) return;
+
+    // When the user enters the entire displayed balance manually, use one wei
+    // less than the raw balance. This handles both rounded UI values and pool
+    // implementations that reject an exact balance boundary. The difference
+    // is 0.000000000000000001 LP and is invisible at the displayed precision.
+    if (parsedLpAmount >= lpBalanceRaw) {
+      parsedLpAmount = lpBalanceRaw > 1n ? lpBalanceRaw - 1n : lpBalanceRaw;
+    }
+
+    setLiquidityTxAction('remove');
     resetTx();
-    const parsedLpAmount = parseUnits(removeLpAmount, 18);
     writeContract({
       address: CONTRACT_ADDRESSES.POOL,
       abi: POOL_ABI,
@@ -550,11 +670,22 @@ export default function App(): JSX.Element {
       setRemoveLpAmount('');
       setSwapInput('');
       setStakeAmount('');
-      setSwapRawInput(null); 
-      setLiqUsdcInput('');
-      setLiqArcgInput('');
+      setSwapRawInput(null);
+
+      // IMPORTANT: Approval transactions must keep both liquidity inputs.
+      // The user still needs the amounts to submit Add Liquidity after the
+      // approval confirmation. Only clear liquidity inputs after the actual
+      // add/remove liquidity transaction succeeds.
+      if (liquidityTxAction === 'add') {
+        setLiqUsdcInput('');
+        setLiqArcgInput('');
+      } else if (liquidityTxAction === 'remove') {
+        setRemoveLpAmount('');
+      }
+
+      setLiquidityTxAction('');
     }
-  }, [isTxSuccess]); 
+  }, [isTxSuccess, liquidityTxAction]); 
 
   // FAUCET
   const handleMintTokens = async () => {  
@@ -886,6 +1017,11 @@ export default function App(): JSX.Element {
                         />  
                         <div className="token-selector">💵 vUSDC</div>
                       </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <button className="btn-max" onClick={handleMaxLiqUsdc}>
+                          Max
+                        </button>
+                      </div>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'center', margin: '0.5rem 0' }}>
@@ -906,6 +1042,11 @@ export default function App(): JSX.Element {
                           onChange={(e) => handleLiqArcgChange(e.target.value)}
                         />
                         <div className="token-selector">🪙 ARCG</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <button className="btn-max" onClick={handleMaxLiqArcg}>
+                          Max
+                        </button>
                       </div>
                     </div>
 
@@ -931,7 +1072,16 @@ export default function App(): JSX.Element {
                         <button 
                           className="btn-action" 
                           onClick={handleAddLiquidity} 
-                          disabled={!liqUsdcInput || !liqArcgInput || isTxPending || isTxConfirming || parseFloat(erc20UsdcBalance) < parseFloat(liqUsdcInput) || parseFloat(arcgBalance) < parseFloat(liqArcgInput)}
+                          disabled={
+                            !liqUsdcInput ||
+                            !liqArcgInput ||
+                            parsedLiqUsdc === 0n ||
+                            parsedLiqArcg === 0n ||
+                            !hasEnoughLiqUsdc ||
+                            !hasEnoughLiqArcg ||
+                            isTxPending ||
+                            isTxConfirming
+                          }
                         >
                           {isTxPending || isTxConfirming ? <RefreshCw size={18} className="spin" /> : <Droplet size={18} />}
                           Add Liquidity
@@ -961,7 +1111,23 @@ export default function App(): JSX.Element {
                         <div className="token-selector">🌀 ARC-LP</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <button className="btn-max" onClick={() => setRemoveLpAmount(lpBalance)}>Max</button>
+                        <button
+                          className="btn-max"
+                          onClick={() => {
+                            if (lpBalanceRaw > 0n) {
+                              // Keep one wei of LP on the wallet when Max is used.
+                              // This avoids edge-case reverts in pool implementations
+                              // that do strict boundary checks while being visually
+                              // identical to the full balance at 4 decimals.
+                              const maxRemovable = lpBalanceRaw > 1n ? lpBalanceRaw - 1n : lpBalanceRaw;
+                              setRemoveLpAmount(formatUnits(maxRemovable, 18));
+                            } else {
+                              setRemoveLpAmount('');
+                            }
+                          }}
+                        >
+                          Max
+                        </button>
                       </div>
                     </div>
 
@@ -987,7 +1153,19 @@ export default function App(): JSX.Element {
                       <button 
                         className="btn-action" 
                         onClick={handleRemoveLiquidity} 
-                        disabled={!removeLpAmount || isTxPending || isTxConfirming || parseFloat(lpBalance) < parseFloat(removeLpAmount)}
+                        disabled={
+                          !removeLpAmount ||
+                          isTxPending ||
+                          isTxConfirming ||
+                          lpBalanceRaw === 0n ||
+                          (() => {
+                            try {
+                              return parseUnits(removeLpAmount, 18) > lpBalanceRaw;
+                            } catch {
+                              return true;
+                            }
+                          })()
+                        }
                       >
                         {isTxPending || isTxConfirming ? <RefreshCw size={18} className="spin" /> : <Minus size={18} />}
                         Remove Liquidity
@@ -1323,4 +1501,4 @@ export default function App(): JSX.Element {
       </main>
     </div>
   );
-} 
+}  
