@@ -326,9 +326,12 @@ export default function App(): JSX.Element {
   // SWAP
   const [swapDirection, setSwapDirection] = useState<'usdc-to-arcg' | 'arcg-to-usdc'>('usdc-to-arcg');
   const [swapInput, setSwapInput] = useState<string>('');
-  const [swapRawInput, setSwapRawInput] = useState<bigint | null>(null);
   const [swapOutput, setSwapOutput] = useState<string>('0');
   const [priceImpact, setPriceImpact] = useState<string>('0.00');
+
+  // Track which swap transaction is running so an approval success does not
+  // clear the user's entered amount before the actual swap is completed.
+  const [swapTxAction, setSwapTxAction] = useState<'approve' | 'swap' | ''>('');
 
   useEffect(() => {
     if (!swapInput || isNaN(parseFloat(swapInput)) || parseFloat(swapInput) <= 0) {
@@ -383,11 +386,45 @@ export default function App(): JSX.Element {
     args: address ? [address, CONTRACT_ADDRESSES.POOL] : undefined,
   });
 
-  const parsedSwapInput = swapRawInput ?? (swapInput && !isNaN(parseFloat(swapInput)) ? parseUnits(swapInput, tokenInDecimals) : 0n);
-  const needsSwapApproval = swapAllowanceRaw !== undefined && parsedSwapInput > 0n && swapAllowanceRaw < parsedSwapInput;
+  // Always derive the transaction amount from the CURRENT visible input.
+  // Do not prefer swapRawInput here because it can become stale when the user
+  // edits the amount after pressing Max. A stale raw value can make the wallet
+  // submit a different amount than the one shown in the input (e.g. UI shows
+  // 99 while the transaction sends 199).
+  const parsedSwapInput = (() => {
+    if (!swapInput || isNaN(parseFloat(swapInput)) || parseFloat(swapInput) <= 0) return 0n;
+    try {
+      return parseUnits(swapInput, tokenInDecimals);
+    } catch {
+      return 0n;
+    }
+  })();
+
+  // Use the exact current on-chain token balance for swap validation.
+  // Never allow an approval transaction when the wallet cannot cover the
+  // entered amount. The UI balance is formatted/rounded, so raw bigint data
+  // is used for the actual comparison.
+  const currentSwapBalanceRaw =
+    swapDirection === 'usdc-to-arcg'
+      ? erc20UsdcRaw
+      : arcgRaw;
+
+  const hasEnoughSwapBalance =
+    currentSwapBalanceRaw !== undefined &&
+    parsedSwapInput <= (currentSwapBalanceRaw as bigint);
+
+  const needsSwapApproval =
+    swapAllowanceRaw !== undefined &&
+    parsedSwapInput > 0n &&
+    swapAllowanceRaw < parsedSwapInput;
 
   const handleApproveSwap = async () => {
-    if (!tokenInAddress || parsedSwapInput === 0n) return;
+    if (
+      !tokenInAddress ||
+      parsedSwapInput === 0n ||
+      !hasEnoughSwapBalance
+    ) return;
+    setSwapTxAction('approve');
     resetTx();
     writeContract({
       address: tokenInAddress,
@@ -398,7 +435,8 @@ export default function App(): JSX.Element {
   };
 
   const handleSwap = async () => {
-    if (parsedSwapInput === 0n) return;
+    if (parsedSwapInput === 0n || !hasEnoughSwapBalance) return;
+    setSwapTxAction('swap');
     resetTx();
     
     const expectedOutDecimals = swapDirection === 'usdc-to-arcg' ? 18 : 6;
@@ -668,9 +706,14 @@ export default function App(): JSX.Element {
       }, 800);
 
       setRemoveLpAmount('');
-      setSwapInput('');
+
+      // IMPORTANT: Keep the swap amount after approval succeeds.
+      // Clear it only after the actual swap transaction succeeds.
+      if (swapTxAction === 'swap') {
+        setSwapInput('');
+      }
+
       setStakeAmount('');
-      setSwapRawInput(null);
 
       // IMPORTANT: Approval transactions must keep both liquidity inputs.
       // The user still needs the amounts to submit Add Liquidity after the
@@ -684,8 +727,9 @@ export default function App(): JSX.Element {
       }
 
       setLiquidityTxAction('');
+      setSwapTxAction('');
     }
-  }, [isTxSuccess, liquidityTxAction]); 
+  }, [isTxSuccess, liquidityTxAction, swapTxAction]); 
 
   // FAUCET
   const handleMintTokens = async () => {  
@@ -840,15 +884,7 @@ export default function App(): JSX.Element {
                       className="token-input" 
                       placeholder="0.0" 
                       value={swapInput}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setSwapInput(val);
-                        try {
-                          setSwapRawInput(val ? parseUnits(val, tokenInDecimals) : null);
-                        } catch {
-                          setSwapRawInput(null);
-                        }
-                      }}
+                      onChange={(e) => setSwapInput(e.target.value)}
                     />
                     <div className="token-selector">
                       <span className="token-logo">{swapDirection === 'usdc-to-arcg' ? '💵' : '🪙'}</span>
@@ -862,7 +898,6 @@ export default function App(): JSX.Element {
                         const rawBal = swapDirection === 'usdc-to-arcg' ? erc20UsdcRaw : arcgRaw;
                         if (!rawBal) return;
 
-                        setSwapRawInput(BigInt(rawBal as any));
                         const formatted = formatUnits(BigInt(rawBal as any), tokenInDecimals);
                         const parts = formatted.split('.');
                         const truncated = parts[1] ? `${parts[0]}.${parts[1].slice(0, 4)}` : parts[0];
@@ -880,7 +915,6 @@ export default function App(): JSX.Element {
                     onClick={() => {
                       setSwapDirection(prev => prev === 'usdc-to-arcg' ? 'arcg-to-usdc' : 'usdc-to-arcg');
                       setSwapInput('');
-                      setSwapRawInput(null);
                       setSwapOutput('0');
                     }}
                   >
@@ -955,19 +989,30 @@ export default function App(): JSX.Element {
                     <button 
                       className="btn-action" 
                       onClick={handleApproveSwap} 
-                      disabled={isTxPending || isTxConfirming}
+                      disabled={
+                        !hasEnoughSwapBalance ||
+                        isTxPending ||
+                        isTxConfirming
+                      }
                     >
                       {isTxPending || isTxConfirming ? <RefreshCw size={18} className="spin" /> : null}
-                      Approve {currentTokenInLabel}
+                      {!hasEnoughSwapBalance ? 'Insufficient Balance' : `Approve ${currentTokenInLabel}`}
                     </button>
                   ) : (
                     <button 
                       className="btn-action" 
                       onClick={handleSwap} 
-                      disabled={!swapInput || swapOutput === '0' || swapOutput === 'No Liquidity' || isTxPending || isTxConfirming || parseFloat(currentBalanceIn) < parseFloat(swapInput)}
+                      disabled={
+                        !swapInput ||
+                        swapOutput === '0' ||
+                        swapOutput === 'No Liquidity' ||
+                        isTxPending ||
+                        isTxConfirming ||
+                        !hasEnoughSwapBalance
+                      }
                     >
                       {isTxPending || isTxConfirming ? <RefreshCw size={18} className="spin" /> : null}
-                      {parseFloat(currentBalanceIn) < parseFloat(swapInput) ? 'Insufficient Balance' : 'Swap Assets'}
+                      {!hasEnoughSwapBalance ? 'Insufficient Balance' : 'Swap Assets'}
                     </button>
                   )}
                 </div>
