@@ -1968,7 +1968,7 @@ export default function App(): JSX.Element {
           }}>Max</button>
         </div>
         {officialSwapMaxSelected && officialSwapTokenIn.toLowerCase() === CONTRACT_ADDRESSES.OFFICIAL_USDC.toLowerCase() && (
-          <div className="gas-warning">
+          <div className={`gas-warning ${compact ? 'compact-gas-warning' : ''}`}>
             <AlertCircle size={16} />
             <span>Full USDC balance cannot cover gas. Keep some USDC for gas.</span>
           </div>
@@ -3075,6 +3075,61 @@ export default function App(): JSX.Element {
 
         .wide-card { width: min(100%, 720px); }
         .swap-card-compact { width: min(100%, 620px); }
+
+        /* Home compact swap card: keep the full-balance gas notice compact so
+           it does not push the Approve / Swap action below the visible card.
+           This affects only the Home compact swap card; the full Swap page is
+           intentionally left unchanged. */
+        @media (min-width: 821px) {
+          .swap-card-compact {
+            padding: 18px;
+          }
+
+          .swap-card-compact .card-title-row {
+            margin-bottom: 12px;
+          }
+
+          .swap-card-compact .token-box {
+            padding: 12px 14px 8px;
+          }
+
+          .swap-card-compact .gas-warning {
+            margin-top: 7px;
+            padding: 7px 9px;
+            gap: 7px;
+            font-size: 10px;
+            line-height: 1.3;
+          }
+
+          /* Home only: the full-USDC gas notice must not add height to the
+             swap card. Keep it in the unused top-right area of the card so
+             the Approve / Swap button stays visible. The full Swap page keeps
+             the normal in-flow warning. */
+          .swap-card-compact .compact-gas-warning {
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            width: min(270px, calc(100% - 230px));
+            margin-top: 0;
+            box-sizing: border-box;
+            z-index: 3;
+          }
+
+          .swap-card-compact .gas-warning svg {
+            width: 14px;
+            height: 14px;
+          }
+
+          .swap-card-compact .swap-arrow-wrap {
+            height: 34px;
+          }
+
+          .swap-card-compact .btn-switch-direction {
+            width: 34px;
+            height: 34px;
+          }
+        }
+
         .swap-card h2 { margin: 5px 0 0; font-size: 25px; letter-spacing: -.5px; }
 
         .card-title-row {
