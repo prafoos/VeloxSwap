@@ -32,6 +32,12 @@
   --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
@@ -60,16 +66,14 @@ body::before {
 }
 
 body::after {
-  bottom: -100px;
-  left: -50px;
-  background: radial-gradient(circle, var(--color-secondary) 0%, transparent 80%);
+  display: none;
 }
 
 /* Layout App Container */
 .app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: auto;
   padding: 0 1.5rem;
 }
 
@@ -101,6 +105,7 @@ body::after {
   font-size: 1.5rem;
   font-weight: 700;
   background: linear-gradient(135deg, #fff 30%, #a78bfa 100%);
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: -0.02em;
@@ -195,8 +200,8 @@ body::after {
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex: 1;
-  padding-bottom: 4rem;
+  flex: 0 0 auto;
+  padding-bottom: 0;
 }
 
 /* Glassmorphic Swap Box */
@@ -563,5 +568,229 @@ body::after {
   }
   .token-input {
     font-size: 1.5rem;
+  }
+} 
+
+/* ============================================================
+   VeloxSwap desktop viewport-fit layer
+   Layout-only: does not alter React, wallet, swap, liquidity,
+   staking, faucet, contract or transaction functionality.
+   ============================================================ */
+@media (min-width: 821px) and (min-height: 680px) {
+  .velox-app .vx-header {
+    height: 68px !important;
+    min-height: 68px !important;
+  }
+
+  .velox-app .vx-nav {
+    height: 68px !important;
+  }
+
+  .velox-app .vx-nav button {
+    padding-top: 22px !important;
+    padding-bottom: 20px !important;
+  }
+
+  .velox-app .vx-nav button.active::after {
+    bottom: 12px !important;
+  }
+
+  .velox-app .hero {
+    min-height: 400px !important;
+    padding: 28px 20px 18px !important;
+    gap: 42px !important;
+  }
+
+  .velox-app .hero-title {
+    font-size: clamp(40px, 4.3vw, 60px) !important;
+    margin: 10px 0 12px !important;
+  }
+
+  .velox-app .hero-description {
+    font-size: 15.5px !important;
+    line-height: 1.5 !important;
+    margin-bottom: 20px !important;
+  }
+
+  .velox-app .hero-features {
+    gap: 20px !important;
+  }
+
+  .velox-app .hero-feature {
+    font-size: 13px !important;
+  }
+
+  .velox-app .feature-cards {
+    padding: 12px 0 16px !important;
+  }
+
+  .velox-app .feature-card {
+    min-height: 168px !important;
+    padding: 15px !important;
+  }
+
+  .velox-app .feature-icon {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  .velox-app .feature-card h3 {
+    margin: 12px 0 5px !important;
+    font-size: 18px !important;
+  }
+
+  .velox-app .feature-card p {
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+
+  .velox-app .outline-btn {
+    min-height: 36px !important;
+    padding: 0 12px !important;
+    font-size: 12px !important;
+  }
+
+  .velox-app .app-footer {
+    margin-top: 0 !important;
+    padding: 14px 4.5% !important;
+  }
+}
+
+/* Keep smaller-height desktop screens compact without affecting mobile. */
+@media (min-width: 821px) and (max-height: 679px) {
+  .velox-app .vx-header,
+  .velox-app .vx-nav { height: 60px !important; }
+  .velox-app .hero { min-height: 340px !important; padding: 20px 16px 12px !important; gap: 30px !important; }
+  .velox-app .hero-title { font-size: clamp(36px, 4vw, 52px) !important; margin: 7px 0 9px !important; }
+  .velox-app .hero-description { font-size: 14px !important; line-height: 1.4 !important; margin-bottom: 14px !important; }
+  .velox-app .feature-cards { padding: 8px 0 10px !important; }
+  .velox-app .feature-card { min-height: 140px !important; padding: 12px !important; }
+  .velox-app .feature-icon { width: 34px !important; height: 34px !important; }
+  .velox-app .feature-card h3 { margin: 8px 0 3px !important; font-size: 16px !important; }
+  .velox-app .feature-card p { font-size: 11px !important; }
+  .velox-app .outline-btn { min-height: 32px !important; font-size: 11px !important; }
+  .velox-app .app-footer { padding: 9px 4.5% !important; }
+}
+
+
+/* Fixed-height desktop cards: layout only, no functionality changes.
+ * Home compact swap card stays the same height while Rate / Price Impact /
+ * Liquidity Provider Fee appear. The details are kept; only spacing is
+ * tightened inside the existing card.
+ */
+@media (min-width: 821px) {
+  .swap-mode-shell > .swap-card {
+    min-height: 650px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .swap-mode-shell > .swap-card > .btn-action {
+    margin-top: auto;
+  }
+
+  .swap-mode-shell > .swap-card .details-container {
+    flex: 0 0 auto;
+  }
+
+  .liquidity-mode-shell > .swap-card {
+    min-height: 650px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .liquidity-mode-shell > .swap-card .pool-stats {
+    margin-top: auto;
+  }
+
+  .liquidity-mode-shell > .swap-card .card-title-row {
+    margin-bottom: 10px;
+  }
+
+  .liquidity-mode-shell > .swap-card .card-description {
+    margin-bottom: 12px;
+    line-height: 1.45;
+  }
+
+  /* HOME: keep the compact swap card at a stable desktop height. */
+  .compact-mode-shell > .swap-card {
+    height: 470px !important;
+    min-height: 470px !important;
+    max-height: 470px !important;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .compact-mode-shell > .swap-card > .btn-action {
+    margin-top: auto;
+  }
+
+  .compact-mode-shell > .swap-card > .text-link-button {
+    flex: 0 0 auto;
+  }
+
+  /* When quote details are visible, compress only layout spacing so the
+     card does not grow. No detail/quote content is hidden or removed. */
+  .compact-mode-shell > .swap-card:has(.details-container) {
+    padding: 14px 16px !important;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .card-title-row {
+    margin-bottom: 8px;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .token-box {
+    padding: 10px 12px 7px;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .balance-row {
+    margin-bottom: 4px;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .token-input {
+    font-size: 27px;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .token-selector {
+    padding: 6px 8px;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .token-logo {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .swap-arrow-wrap {
+    height: 30px;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .btn-switch-direction {
+    width: 32px;
+    height: 32px;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .details-container {
+    margin-top: 7px;
+    padding: 6px 10px;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .detail-item {
+    padding: 2px 0;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .btn-action {
+    min-height: 44px;
+    margin-top: 8px;
+  }
+
+  .compact-mode-shell > .swap-card:has(.details-container) .text-link-button {
+    margin-top: 4px;
   }
 }

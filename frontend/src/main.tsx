@@ -13,12 +13,13 @@ export const config = createConfig({
   connectors: [
     injected({
       target: 'metaMask',
+      shimDisconnect: true,
     }),
   ],
   transports: {
     [arcTestnet.id]: http(undefined, { batch: true }),
   },
-}); 
+});
 
 const queryClient = new QueryClient();
 
@@ -31,4 +32,3 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </WagmiProvider>
   </React.StrictMode>
 );
- 

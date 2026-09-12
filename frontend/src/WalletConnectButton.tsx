@@ -1,28 +1,34 @@
-import { useAccount, useDisconnect, useConnect } from 'wagmi';
-import { injected } from 'wagmi/connectors';
+import { useAccount, useDisconnect } from 'wagmi';
 
 export function WalletConnectButton() {
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
-  const { connect } = useConnect();
 
   const truncatedAddress = address
     ? `${address.slice(0, 6)}...${address.slice(-4)}`
     : '';
 
-  const handleConnect = () => {
-    // window.ethereum ഉണ്ടോ എന്ന് ഉറപ്പുവരുത്തുന്നു
-    if (typeof window !== 'undefined' && window.ethereum) {
-      connect({ connector: injected() });
-    } else {
-      alert('MetaMask അല്ലെങ്കിൽ മറ്റെതെങ്കിലും Web3 Wallet ബ്രൗസറിൽ ഇൻസ്റ്റാൾ ചെയ്തിട്ടുണ്ടെന്ന് ഉറപ്പുവരുത്തുക!');
+  const handleConnect = async () => {
+    try {
+      if (typeof window !== 'undefined' && (window as any).ethereum) {
+        await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+      } else {
+        alert('MetaMask or another Web3 extension is required.');
+      }
+    } catch (e) {
+      console.error('Wallet connection failed', e);
     }
+  };
+
+  const handleDisconnect = () => {
+    // Let Wagmi disconnect the active connection.
+    disconnect();
   };
 
   if (isConnected) {
     return (
       <button
-        onClick={() => disconnect()}
+        onClick={handleDisconnect}
         type="button"
         className="btn-connect"
         style={{
@@ -40,7 +46,7 @@ export function WalletConnectButton() {
         }}
       >
         <span>{truncatedAddress}</span>
-        <span style={{ fontSize: '11px', color: '#ef4444', opacity: 0.8 }}>
+        <span style={{ fontSize: '11px', color: '#ef4444', opacity: 0.9 }}>
           (Disconnect)
         </span>
       </button>
@@ -67,4 +73,4 @@ export function WalletConnectButton() {
       Connect Wallet
     </button>
   );
-}  
+}
