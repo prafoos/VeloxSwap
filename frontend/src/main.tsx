@@ -3,47 +3,40 @@ import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { arcTestnet } from './chains/arcTestnet';
-import { createConfig, http, WagmiProvider } from 'wagmi';
 import {
-  injected,
-  walletConnect,
-} from 'wagmi/connectors';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
+  getDefaultConfig,
+  RainbowKitProvider,
+  darkTheme,
+} from '@rainbow-me/rainbowkit';
 import '@rainbow-me/rainbowkit/styles.css';
+import { createConfig, http, injected, WagmiProvider } from 'wagmi';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-const walletConnectProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined;
+const walletConnectProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as
+  | string
+  | undefined;
 
-const optionalWalletConnect = walletConnectProjectId
-  ? [
-      walletConnect({
-        projectId: walletConnectProjectId,
-        showQrModal: true,
-      }),
-    ]
-  : [];
-
-export const config = createConfig({
-  // Keep EIP-6963 discovery enabled so installed Rabby, Phantom, OKX,
-  // SubWallet, Brave Wallet, etc. can appear as separate wallet choices.
-  multiInjectedProviderDiscovery: true,
-  chains: [arcTestnet],
-  connectors: [
-    // Explicit MetaMask target fixes MetaMask selection while keeping the
-    // generic injected connector available for the long tail of wallets.
-    injected({
-      target: 'metaMask',
-      shimDisconnect: true,
-    }),
-    // Generic EIP-1193/EIP-6963 connector for Rabby, Phantom, OKX,
-    // Coinbase Wallet, SubWallet, Brave Wallet and other injected wallets.
-    injected({ shimDisconnect: true }),
-    ...optionalWalletConnect,
-  ],
-  transports: {
-    [arcTestnet.id]: http(),
-  },
-});
+// Use RainbowKit's full native wallet list when WalletConnect is configured.
+// If the project id is not present, keep the app working with injected wallets
+// instead of crashing the whole app during startup.
+export const config = walletConnectProjectId
+  ? getDefaultConfig({
+      appName: 'VeloxSwap',
+      projectId: walletConnectProjectId,
+      chains: [arcTestnet],
+      multiInjectedProviderDiscovery: true,
+      transports: {
+        [arcTestnet.id]: http(),
+      },
+    })
+  : createConfig({
+      multiInjectedProviderDiscovery: true,
+      chains: [arcTestnet],
+      connectors: [injected({ shimDisconnect: true })],
+      transports: {
+        [arcTestnet.id]: http(),
+      },
+    });
 
 const queryClient = new QueryClient();
 
