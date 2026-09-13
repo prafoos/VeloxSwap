@@ -1875,14 +1875,8 @@ export default function App(): JSX.Element {
   };
 
   const handleConnectWallet = async () => {
-    try {
-      if (typeof window !== 'undefined' && (window as any).ethereum) {
-        await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
-      } else {
-        alert("Metamask or another Web3 extension is required.");
-      }
-    } catch (e) {
-      console.error("Wallet connection failed", e);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('veloxswap:open-wallet-modal'));
     }
   };
 
@@ -3763,6 +3757,99 @@ export default function App(): JSX.Element {
         .spin { animation: vxspin .9s linear infinite; }
         @keyframes vxspin { to { transform: rotate(360deg); } }
 
+
+        /* Robust responsive header: prevents navigation and wallet controls from overlapping
+           on narrow/tablet/mobile browser viewports and on devices using page zoom. */
+        @media (max-width: 1200px) {
+          .vx-header {
+            gap: 12px;
+            padding-left: 20px;
+            padding-right: 20px;
+          }
+          .vx-brand { min-width: 190px; }
+          .vx-brand-name { font-size: 21px; }
+          .vx-nav {
+            gap: 14px;
+            max-width: calc(100% - 430px);
+          }
+          .vx-nav button { font-size: 14px; }
+          .vx-header-actions { gap: 8px; }
+          .network-select { min-width: 120px; padding-left: 10px; padding-right: 10px; }
+          .vx-wallet-button { min-width: 140px; padding-left: 14px; padding-right: 14px; }
+        }
+
+        @media (max-width: 1200px) {
+          .vx-header {
+            position: relative;
+            height: auto;
+            min-height: 0;
+            padding: 10px 14px 0;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            grid-template-areas:
+              "brand actions"
+              "nav nav";
+            align-items: center;
+            gap: 8px 10px;
+          }
+          .vx-brand { grid-area: brand; min-width: 0; gap: 8px; }
+          .vx-brand-name { font-size: 20px; }
+          .vx-brand-mark { width: 38px; height: 38px; font-size: 24px; }
+          .vx-header-actions { grid-area: actions; min-height: 42px; height: 42px; margin: 0; }
+          .vx-header-actions > :last-child {
+            width: 140px !important;
+            min-width: 140px !important;
+            max-width: 140px !important;
+            height: 42px !important;
+            flex: 0 0 140px !important;
+          }
+          .vx-header-actions > :last-child .vx-wallet-button {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            height: 42px !important;
+          }
+          .vx-nav {
+            grid-area: nav;
+            position: static;
+            transform: none;
+            width: 100%;
+            max-width: none;
+            height: 46px;
+            justify-content: flex-start;
+            overflow-x: auto;
+            overflow-y: hidden;
+            gap: 18px;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+          }
+          .vx-nav::-webkit-scrollbar { display: none; }
+          .vx-nav button {
+            flex: 0 0 auto;
+            font-size: 14px;
+            padding: 10px 1px 12px;
+          }
+          .vx-nav button.active::after { bottom: 3px; }
+          .hero { padding-top: 30px; }
+        }
+
+        @media (max-width: 560px) {
+          .vx-header { padding: 9px 10px 0; gap: 6px 8px; }
+          .vx-brand-name { font-size: 18px; }
+          .vx-brand-mark { width: 34px; height: 34px; font-size: 22px; border-radius: 10px; }
+          .vx-header-actions { min-height: 40px; height: 40px; }
+          .vx-header-actions > :last-child {
+            width: 126px !important;
+            min-width: 126px !important;
+            max-width: 46vw !important;
+            height: 40px !important;
+            flex-basis: 126px !important;
+          }
+          .vx-wallet-button { min-width: 126px; max-width: 46vw; height: 40px; font-size: 12px; padding: 0 10px; }
+          .vx-nav { height: 42px; gap: 16px; }
+          .vx-nav button { font-size: 13px; padding: 8px 0 11px; }
+        }
+
         @media (max-width: 1100px) {
           .vx-nav { gap: 18px; }
           .vx-brand { min-width: auto; }
@@ -3808,24 +3895,38 @@ export default function App(): JSX.Element {
 
         @media (max-width: 560px) {
           .vx-header-actions .network-select { display: none; }
-          .vx-wallet-button { min-width: 132px; font-size: 13px; }
+          .vx-wallet-button { min-width: 132px; max-width: 48vw; font-size: 13px; }
           .vx-brand-name { font-size: 20px; }
           .vx-brand-mark { width: 37px; height: 37px; }
-          .hero-title { font-size: 39px; }
-          .hero-description { font-size: 15px; }
-          .hero-features { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-          .feature-cards { grid-template-columns: 1fr; }
-          .feature-card { min-height: 190px; }
-          .swap-card { padding: 18px; border-radius: 14px; }
-          .page-area { min-height: 520px; padding-top: 38px; }
-          .token-input { font-size: 25px; }
-          .token-selector { min-width: 112px; }
+          .vx-header { padding-left: 12px; padding-right: 12px; }
+          .hero { padding: 34px 14px 28px; min-height: auto; }
+          .hero-title { font-size: 39px; line-height: 1.05; }
+          .hero-description { font-size: 15px; line-height: 1.55; }
+          .hero-features { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+          .hero-feature { font-size: 12px; }
+          .feature-cards { grid-template-columns: 1fr; gap: 12px; padding-left: 14px; padding-right: 14px; }
+          .feature-card { min-height: 180px; }
+          .page-area { min-height: 0; padding: 24px 12px 32px; }
+          .swap-card { width: 100%; max-width: 100%; padding: 16px 12px; border-radius: 14px; box-sizing: border-box; }
+          .card-title-row { gap: 8px; align-items: flex-start; }
+          .card-title-row > div:first-child { min-width: 0; }
+          .card-title-row h2 { font-size: 20px; }
+          .card-description { font-size: 11px; line-height: 1.35; }
+          .token-box { width: 100%; box-sizing: border-box; padding-left: 10px; padding-right: 10px; }
+          .token-input { font-size: 22px; min-width: 0; }
+          .token-row { gap: 8px; }
+          .token-selector { min-width: 96px; max-width: 42%; padding-left: 7px; padding-right: 7px; }
+          .token-select { min-width: 0; }
           .two-buttons, .contact-grid { grid-template-columns: 1fr; }
           .faucet-row { align-items: flex-start; flex-direction: column; }
           .faucet-row .btn-connect { width: 100%; }
           .pool-stats { grid-template-columns: 1fr; }
           .pool-stat.full { grid-column: auto; }
-          .app-footer { flex-direction: column; text-align: center; }
+          .status-stack, .balance-dashboard { width: 100% !important; box-sizing: border-box; }
+          .status-box { overflow-wrap: anywhere; }
+          .balance-lines div { gap: 8px; }
+          .balance-lines strong { text-align: right; overflow-wrap: anywhere; }
+          .app-footer { flex-direction: column; text-align: center; gap: 14px; padding-left: 14px; padding-right: 14px; }
           .footer-brand { flex-direction: column; }
           .footer-brand span { margin: 0; }
         }
