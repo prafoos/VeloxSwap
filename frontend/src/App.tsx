@@ -1561,6 +1561,13 @@ export default function App(): JSX.Element {
       void (async () => {
         try {
           const receipt = await waitForTransactionReceipt(config, { hash: txHash });
+          if (receipt.status !== 'success') return;
+
+          // Clear the entered swap amount only after the actual swap receipt
+          // is confirmed successful. No other swap or app logic is changed.
+          setOfficialSwapInput('');
+          setOfficialSwapOutput('0');
+
           const poolKey = officialConfig.pool.toLowerCase();
           const tokenInKey = officialSwapTokenIn.toLowerCase();
           const tokenOutKey = officialSwapTokenOut.toLowerCase();
