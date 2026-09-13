@@ -5,11 +5,12 @@ import './index.css';
 import { arcTestnet } from './chains/arcTestnet';
 import { createConfig, http, WagmiProvider } from 'wagmi';
 import {
-  metaMask,
   injected,
   walletConnect,
 } from 'wagmi/connectors';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
+import '@rainbow-me/rainbowkit/styles.css';
 
 const walletConnectProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined;
 
@@ -28,8 +29,12 @@ export const config = createConfig({
   multiInjectedProviderDiscovery: true,
   chains: [arcTestnet],
   connectors: [
-    // Use wagmi's dedicated MetaMask connector for reliable MetaMask discovery.
-    metaMask(),
+    // Explicit MetaMask target fixes MetaMask selection while keeping the
+    // generic injected connector available for the long tail of wallets.
+    injected({
+      target: 'metaMask',
+      shimDisconnect: true,
+    }),
     // Generic EIP-1193/EIP-6963 connector for Rabby, Phantom, OKX,
     // Coinbase Wallet, SubWallet, Brave Wallet and other injected wallets.
     injected({ shimDisconnect: true }),
@@ -46,7 +51,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <App />
+        <RainbowKitProvider theme={darkTheme()}>
+          <App />
+        </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   </React.StrictMode>,
