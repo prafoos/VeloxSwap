@@ -53,7 +53,8 @@ const OFFICIAL_PAIR_CONFIG = {
   },
   'usdc-cirbtc': {
     label: 'USDC / cirBTC',
-    pool: CONTRACT_ADDRESSES.CIRBTC_USDC_POOL,
+    pool: CONTRACT_ADDRESSES.
+    CIRBTC_USDC_POOL, 
     token0: CONTRACT_ADDRESSES.OFFICIAL_USDC,
     token0Symbol: 'USDC',
     token0Decimals: 6,
@@ -106,18 +107,6 @@ const OFFICIAL_POOL_STATE_ABI = [
   { type: 'function', name: 'reserve1', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
   { type: 'function', name: 'totalSupplyLP', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 ] as const;
-
-const sqrtBigInt = (value: bigint): bigint => {
-  if (value < 0n) throw new Error('Cannot sqrt a negative bigint');
-  if (value < 2n) return value;
-  let x0 = 1n << BigInt((value.toString(2).length + 1) >> 1);
-  let x1 = (x0 + value / x0) >> 1n;
-  while (x1 < x0) {
-    x0 = x1;
-    x1 = (x0 + value / x0) >> 1n;
-  }
-  return x0;
-};
 
 export default function App(): JSX.Element {
   const { address, isConnected, chainId } = useAccount();
@@ -903,15 +892,6 @@ export default function App(): JSX.Element {
   const [officialLiqMax1Selected, setOfficialLiqMax1Selected] = useState(false);
   const [officialMaxRaw0, setOfficialMaxRaw0] = useState<bigint | null>(null);
   const [officialMaxRaw1, setOfficialMaxRaw1] = useState<bigint | null>(null);
-  // Some Arc Testnet RPC reads can briefly return 0 for the cirBTC pool's
-  // ERC-20 LP balance even though the confirmed add-liquidity receipt already
-  // contains the LP mint. Keep that confirmed mint amount as a temporary
-  // fallback until the normal balanceOf read catches up.
-  const [officialLpReceiptFallbackRaw, setOfficialLpReceiptFallbackRaw] = useState<Record<string, bigint>>({});
-  const [officialLpTotalSupplyFallbackRaw, setOfficialLpTotalSupplyFallbackRaw] = useState<Record<string, bigint>>({});
-  const [officialReserveReceiptFallbackRaw, setOfficialReserveReceiptFallbackRaw] = useState<Record<string, { amount0: bigint; amount1: bigint }>>({});
-  const officialAddTotalSupplyBeforeRef = useRef<bigint | undefined>(undefined);
-  const officialAddReserveBeforeRef = useRef<{ reserve0: bigint; reserve1: bigint } | undefined>(undefined);
   // Live BTC/USD market price used only when the official USDC/cirBTC pool
   // has no reserves yet. Once the pool has reserves, the AMM reserve ratio
   // remains the source of truth for liquidity/swap pricing.
@@ -921,8 +901,6 @@ export default function App(): JSX.Element {
   // This is especially useful for the official cirBTC pool where the balance
   // RPC can lag behind the successful add-liquidity receipt.
   const [officialBalanceAdjustments, setOfficialBalanceAdjustments] = useState<Record<string, bigint>>({});
-  const officialAddBalanceBeforeRef = useRef<Record<string, bigint | undefined>>({});
-  const officialAddExpectedBalanceRef = useRef<Record<string, bigint | undefined>>({});
   const officialRemoveBalanceBeforeRef = useRef<Record<string, bigint | undefined>>({});
   const officialRemoveExpectedBalanceRef = useRef<Record<string, bigint | undefined>>({});
   const officialSwapBalanceBeforeRef = useRef<Record<string, bigint | undefined>>({});
@@ -1069,17 +1047,16 @@ export default function App(): JSX.Element {
 
   const officialReserve0FromGetReserves = officialReservesData ? officialReservesData[0] : 0n;
   const officialReserve1FromGetReserves = officialReservesData ? officialReservesData[1] : 0n;
-  const officialReserveReceiptFallback = officialReserveReceiptFallbackRaw[officialConfig.pool.toLowerCase()];
   const officialReserve0 = officialReserve0FromGetReserves > 0n
     ? officialReserve0FromGetReserves
     : (officialReserve0Direct ?? 0n) > 0n
     ? (officialReserve0Direct as bigint)
-    : (officialReserveReceiptFallback?.amount0 ?? 0n);
+    : 0n;
   const officialReserve1 = officialReserve1FromGetReserves > 0n
     ? officialReserve1FromGetReserves
     : (officialReserve1Direct ?? 0n) > 0n
     ? (officialReserve1Direct as bigint)
-    : (officialReserveReceiptFallback?.amount1 ?? 0n);
+    : 0n;
   const officialReserveIn = officialSwapDirection === '0-to-1' ? officialReserve0 : officialReserve1;
   const officialReserveOut = officialSwapDirection === '0-to-1' ? officialReserve1 : officialReserve0;
   const officialHasLiquidity = officialReserve0 > 0n && officialReserve1 > 0n;
@@ -1111,14 +1088,9 @@ export default function App(): JSX.Element {
     ? Number(officialLpDecimalsRaw)
     : 18;
 
-  const officialLpOnchainRaw = officialLpRaw ?? 0n;
-  const officialLpReceiptFallbackRawForPool = officialLpReceiptFallbackRaw[officialConfig.pool.toLowerCase()] ?? 0n;
-  // Prefer the confirmed on-chain balance when it is available. If the RPC
-  // is still returning zero immediately after an add, use only the exact LP
-  // mint proven by that transaction receipt.
-  const officialLpBalanceRaw = officialLpOnchainRaw > 0n
-    ? officialLpOnchainRaw
-    : officialLpReceiptFallbackRawForPool;
+  // LP balance is always the deployed pool's real ERC-20 balance.
+  // Never manufacture an LP position from a receipt or submitted amounts.
+  const officialLpBalanceRaw = officialLpRaw ?? 0n;
 
   // LP amounts can be extremely small for a fresh USDC/cirBTC position
   // because cirBTC uses 8 decimals and the LP token uses its own decimals.
@@ -1134,11 +1106,7 @@ export default function App(): JSX.Element {
   };
 
   const officialLpBalance = formatOfficialLpDisplay(officialLpBalanceRaw);
-  const officialLpTotalSupplyOnchainRaw = officialLpTotalRaw ?? 0n;
-  const officialLpTotalSupplyFallbackForPool = officialLpTotalSupplyFallbackRaw[officialConfig.pool.toLowerCase()] ?? 0n;
-  const officialLpTotalSupplyRaw = officialLpTotalSupplyOnchainRaw > 0n
-    ? officialLpTotalSupplyOnchainRaw
-    : officialLpTotalSupplyFallbackForPool;
+  const officialLpTotalSupplyRaw = officialLpTotalRaw ?? 0n;
   const officialLpTotalSupply = Number(formatUnits(officialLpTotalSupplyRaw, officialLpDecimals));
   const officialLpTotalSupplyDisplay = formatOfficialLpDisplay(officialLpTotalSupplyRaw);
 
@@ -1350,7 +1318,14 @@ export default function App(): JSX.Element {
     setOfficialMaxRaw0(null);
     setOfficialMaxRaw1(null);
     setOfficialLiqInput0(value);
-    if (!value || !Number.isFinite(Number(value))) return;
+
+    // When the user clears the first amount, clear the calculated
+    // second amount too. Otherwise the old calculated value remains visible.
+    if (!value || !Number.isFinite(Number(value))) {
+      setOfficialLiqInput1('');
+      return;
+    }
+
     try {
       const amount0 = parseUnits(value, officialConfig.token0Decimals);
       let amount1: bigint | null;
@@ -1364,7 +1339,9 @@ export default function App(): JSX.Element {
         return;
       }
       setOfficialLiqInput1(formatUnits(amount1, officialConfig.token1Decimals));
-    } catch {}
+    } catch {
+      setOfficialLiqInput1('');
+    }
   };
 
   const handleOfficialLiq1Change = (value: string) => {
@@ -1374,7 +1351,14 @@ export default function App(): JSX.Element {
     setOfficialMaxRaw0(null);
     setOfficialMaxRaw1(null);
     setOfficialLiqInput1(value);
-    if (!value || !Number.isFinite(Number(value))) return;
+
+    // Same behavior in the opposite direction: clearing the second
+    // amount must also clear the first calculated amount.
+    if (!value || !Number.isFinite(Number(value))) {
+      setOfficialLiqInput0('');
+      return;
+    }
+
     try {
       const amount1 = parseUnits(value, officialConfig.token1Decimals);
       let amount0: bigint | null;
@@ -1388,7 +1372,9 @@ export default function App(): JSX.Element {
         return;
       }
       setOfficialLiqInput0(formatUnits(amount0, officialConfig.token0Decimals));
-    } catch {}
+    } catch {
+      setOfficialLiqInput0('');
+    }
   };
 
   const calculateOfficialMaxAmounts = () => {
@@ -1468,6 +1454,7 @@ export default function App(): JSX.Element {
       abi: ERC20_ABI,
       functionName: 'approve',
       args: [officialConfig.pool, officialEffectiveLiqAmount0],
+      ...(officialPair === 'usdc-cirbtc' ? { gas: 100_000n } : {}),
     });
   };
 
@@ -1480,28 +1467,12 @@ export default function App(): JSX.Element {
       abi: ERC20_ABI,
       functionName: 'approve',
       args: [officialConfig.pool, officialEffectiveLiqAmount1],
+      ...(officialPair === 'usdc-cirbtc' ? { gas: 100_000n } : {}),
     });
   };
 
   const handleOfficialAddLiquidity = () => {
     if (!officialCanAddLiquidity) return;
-    officialAddBalanceBeforeRef.current = {
-      [officialConfig.token0.toLowerCase()]: officialBalance0Raw,
-      [officialConfig.token1.toLowerCase()]: officialBalance1Raw,
-    };
-    officialAddTotalSupplyBeforeRef.current = officialLpTotalRaw as bigint | undefined;
-    officialAddReserveBeforeRef.current = {
-      reserve0: officialReserve0,
-      reserve1: officialReserve1,
-    };
-    officialAddExpectedBalanceRef.current = {
-      [officialConfig.token0.toLowerCase()]: officialBalance0Raw !== undefined
-        ? (officialBalance0Raw as bigint) - officialEffectiveLiqAmount0
-        : undefined,
-      [officialConfig.token1.toLowerCase()]: officialBalance1Raw !== undefined
-        ? (officialBalance1Raw as bigint) - officialEffectiveLiqAmount1
-        : undefined,
-    };
     setOfficialLiquidityTxAction('add');
     resetTx();
     writeContract({
@@ -1509,6 +1480,7 @@ export default function App(): JSX.Element {
       abi: ARC_TOKEN_PAIR_POOL_ABI,
       functionName: 'addLiquidity',
       args: [officialEffectiveLiqAmount0, officialEffectiveLiqAmount1],
+      ...(officialPair === 'usdc-cirbtc' ? { gas: 3_000_000n } : {}),
     });
   };
 
@@ -1531,6 +1503,7 @@ export default function App(): JSX.Element {
       abi: ARC_TOKEN_PAIR_POOL_ABI,
       functionName: 'removeLiquidity',
       args: [amount],
+      ...(officialPair === 'usdc-cirbtc' ? { gas: 1_000_000n } : {}),
     });
   };
 
@@ -1549,7 +1522,6 @@ export default function App(): JSX.Element {
       for (const [token] of Object.entries(prev)) {
         const raw = rawByToken[token];
         const adjustment = prev[token] ?? 0n;
-        const addExpected = officialAddExpectedBalanceRef.current[token];
         const removeExpected = officialRemoveExpectedBalanceRef.current[token];
         const swapSpentExpected = officialSwapSpentExpectedBalanceRef.current[token];
         const swapReceivedExpected = officialSwapReceivedExpectedBalanceRef.current[token];
@@ -1559,9 +1531,6 @@ export default function App(): JSX.Element {
         } else if (raw !== undefined && adjustment < 0n && swapReceivedExpected !== undefined && raw >= swapReceivedExpected) {
           delete next[token];
           delete officialSwapReceivedExpectedBalanceRef.current[token];
-          changed = true;
-        } else if (raw !== undefined && adjustment >= 0n && addExpected !== undefined && raw <= addExpected) {
-          delete next[token];
           changed = true;
         } else if (raw !== undefined && adjustment >= 0n && swapSpentExpected !== undefined && raw <= swapSpentExpected) {
           delete next[token];
@@ -1675,294 +1644,157 @@ export default function App(): JSX.Element {
       })();
     }
     if (officialLiquidityTxAction === 'add') {
-      setOfficialLiqInput0('');
-      setOfficialLiqInput1('');
-      setOfficialLiqMax0Selected(false);
-      setOfficialLiqMax1Selected(false);
-      setOfficialMaxRaw0(null);
-      setOfficialMaxRaw1(null);
-
-      // The pool contract mints LP through its own LiquidityAdded event.
-      // This is more reliable than guessing the LP amount from a generic
-      // Transfer log because the same transaction also contains token
-      // transfers. Read the exact `liquidity` value emitted by the pool.
       void (async () => {
         try {
           const receipt = await waitForTransactionReceipt(config, { hash: txHash });
-          const poolKey = officialConfig.pool.toLowerCase();
-          let mintedLp = 0n;
-          let receiptAmount0 = 0n;
-          let receiptAmount1 = 0n;
+          if (receipt.status !== 'success') {
+            console.error('USDC/cirBTC addLiquidity reverted:', txHash);
+            setShowTxSuccess(false);
+            return;
+          }
 
-          const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a9df523b3ef' as `0x${string}`;
-          const zeroTopic = `0x${'0'.repeat(64)}`;
-          const walletTopic = address ? `0x${address.toLowerCase().replace(/^0x/, '').padStart(64, '0')}` : '';
+          const poolKey = officialConfig.pool.toLowerCase();
           const token0Key = officialConfig.token0.toLowerCase();
           const token1Key = officialConfig.token1.toLowerCase();
+          const walletTopic = address ? `0x${address.toLowerCase().replace(/^0x/, '').padStart(64, '0')}` : '';
+          const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952a7f163c4a11628f55a9df523b3ef';
+          const zeroTopic = `0x${'0'.repeat(64)}`;
+          let received0 = 0n;
+          let received1 = 0n;
+          let mintedLp = 0n;
+          let liquidityEventFound = false;
 
-          // Parse the actual ERC-20 transfers in the confirmed receipt as a
-          // second, contract-agnostic proof of what the pool received/minted.
-          // This avoids depending solely on a custom event decoder when the
-          // deployed bytecode/RPC exposes logs slightly differently.
           for (const log of receipt.logs) {
-            const logAddress = log.address.toLowerCase();
             if (log.topics[0]?.toLowerCase() !== transferTopic || typeof log.data !== 'string') continue;
+            const logAddress = log.address.toLowerCase();
             try {
               const fromTopic = log.topics[1]?.toLowerCase();
               const toTopic = log.topics[2]?.toLowerCase();
               const value = BigInt(log.data);
-              if (logAddress === token0Key && fromTopic === walletTopic && toTopic === poolKey) {
-                receiptAmount0 = value;
-              } else if (logAddress === token1Key && fromTopic === walletTopic && toTopic === poolKey) {
-                receiptAmount1 = value;
-              } else if (logAddress === poolKey && fromTopic === zeroTopic && toTopic === walletTopic && value > mintedLp) {
-                mintedLp = value;
-              }
+              if (logAddress === token0Key && fromTopic === walletTopic && toTopic === poolKey) received0 += value;
+              if (logAddress === token1Key && fromTopic === walletTopic && toTopic === poolKey) received1 += value;
+              if (logAddress === poolKey && fromTopic === zeroTopic && toTopic === walletTopic) mintedLp += value;
             } catch {}
           }
 
           for (const log of receipt.logs) {
             if (log.address.toLowerCase() !== poolKey) continue;
             try {
-              const decoded = decodeEventLog({
-                abi: OFFICIAL_LP_ABI,
-                data: log.data,
-                topics: log.topics,
-              });
+              const decoded = decodeEventLog({ abi: OFFICIAL_LP_ABI, data: log.data, topics: log.topics });
               if (decoded.eventName === 'LiquidityAdded') {
                 const provider = decoded.args.provider as `0x${string}`;
-                const liquidity = decoded.args.liquidity as bigint;
                 if (address && provider.toLowerCase() === address.toLowerCase()) {
-                  receiptAmount0 = decoded.args.amount0 as bigint;
-                  receiptAmount1 = decoded.args.amount1 as bigint;
-                  if (liquidity > 0n) mintedLp = liquidity;
+                  liquidityEventFound = (decoded.args.liquidity as bigint) > 0n;
+                  if (liquidityEventFound && mintedLp === 0n) mintedLp = decoded.args.liquidity as bigint;
                   break;
                 }
               }
-            } catch {
-              // Ignore unrelated logs in the same receipt.
-            }
+            } catch {}
           }
 
-          // The contract also emits the standard ERC-20 Transfer mint. Keep
-          // this as a secondary fallback, restricted to the pool address.
-          if (mintedLp === 0n) {
-            for (const log of receipt.logs) {
-              if (log.address.toLowerCase() !== poolKey) continue;
-              if (log.topics[0]?.toLowerCase() !== transferTopic) continue;
-              if (log.topics[1]?.toLowerCase() !== zeroTopic) continue;
-              if (log.topics[2]?.toLowerCase() !== walletTopic) continue;
-              if (typeof log.data !== 'string') continue;
-              try {
-                const value = BigInt(log.data);
-                if (value > mintedLp) mintedLp = value;
-              } catch {}
-            }
+          // A genuine add must prove all three on-chain effects in the receipt:
+          // both tokens moved wallet -> pool and LP was minted wallet-side.
+          if (received0 === 0n || received1 === 0n || mintedLp === 0n || !liquidityEventFound) {
+            console.error('USDC/cirBTC addLiquidity receipt did not prove token deposits + LP mint:', { txHash, received0, received1, mintedLp, liquidityEventFound });
+            return;
           }
 
-          // Final fallback: totalSupply must increase by exactly the minted
-          // LP amount for a successful add-liquidity transaction.
-          if (mintedLp === 0n) {
-            const beforeTotal = officialAddTotalSupplyBeforeRef.current;
-            for (const delay of [0, 500, 1200, 2500]) {
+          setOfficialLiqInput0('');
+          setOfficialLiqInput1('');
+          setOfficialLiqMax0Selected(false);
+          setOfficialLiqMax1Selected(false);
+          setOfficialMaxRaw0(null);
+          setOfficialMaxRaw1(null);
+
+          // Only real on-chain reads are used after the receipt. No receipt-derived
+          // LP/reserve/wallet fallback is stored in React state.
+          const refreshOfficialLiquidityState = async () => {
+            for (const delay of [0, 500, 1200, 2500, 5000]) {
               if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-              const totalResult = await refetchOfficialLpTotal();
-              const afterTotal = totalResult.data as bigint | undefined;
-              if (afterTotal !== undefined && beforeTotal !== undefined && afterTotal > beforeTotal) {
-                mintedLp = afterTotal - beforeTotal;
-                break;
-              }
+              await Promise.all([
+                refetchOfficialUsdc(),
+                refetchOfficialEurc(),
+                refetchOfficialCirbtc(),
+                refetchOfficialReserves(),
+                refetchOfficialReserve0Direct(),
+                refetchOfficialReserve1Direct(),
+                refetchOfficialLp(),
+                refetchOfficialLpTotal(),
+                refetchOfficialLpDecimals(),
+                refetchOfficialLiqAllowance0(),
+                refetchOfficialLiqAllowance1(),
+              ]);
             }
-          }
-
-          if (receiptAmount0 > 0n || receiptAmount1 > 0n) {
-            setOfficialReserveReceiptFallbackRaw(prev => ({
-              ...prev,
-              [poolKey]: { amount0: receiptAmount0, amount1: receiptAmount1 },
-            }));
-          }
-
-          if (mintedLp > 0n) {
-            setOfficialLpReceiptFallbackRaw(prev => ({
-              ...prev,
-              [poolKey]: mintedLp,
-            }));
-
-            const beforeTotal = officialAddTotalSupplyBeforeRef.current;
-            if (beforeTotal !== undefined) {
-              setOfficialLpTotalSupplyFallbackRaw(prev => ({
-                ...prev,
-                [poolKey]: beforeTotal + mintedLp,
-              }));
-            }
-          }
-        } catch {
-          // Normal balanceOf polling remains the source of truth if receipt
-          // parsing is unavailable.
+          };
+          void refreshOfficialLiquidityState();
+        } catch (error) {
+          console.error('USDC/cirBTC addLiquidity verification failed:', error);
         }
       })();
-
-      // Keep the wallet balance visually in sync immediately after a confirmed
-      // add-liquidity transaction. The raw ERC-20 balance read can briefly lag
-      // the receipt, most noticeably with cirBTC. The adjustment is based only
-      // on the exact amounts that were actually submitted; it is removed as
-      // soon as the fresh on-chain read reflects the deduction.
-      const added0 = officialEffectiveLiqAmount0;
-      const added1 = officialEffectiveLiqAmount1;
-
-      // If this was an empty pool, the submitted amounts are the exact first
-      // reserve amounts. Keep them as a confirmed-transaction fallback while
-      // the RPC read catches up. This is not a price/estimate or deduction.
-      const beforeReservesForAdd = officialAddReserveBeforeRef.current;
-      const beforeTotalForAdd = officialAddTotalSupplyBeforeRef.current;
-      const wasEmptyBeforeAdd = beforeReservesForAdd !== undefined
-        ? beforeReservesForAdd.reserve0 === 0n && beforeReservesForAdd.reserve1 === 0n
-        : beforeTotalForAdd === 0n;
-      if (wasEmptyBeforeAdd && added0 > 0n && added1 > 0n) {
-        const poolKey = officialConfig.pool.toLowerCase();
-        setOfficialReserveReceiptFallbackRaw(prev => ({
-          ...prev,
-          [poolKey]: { amount0: added0, amount1: added1 },
-        }));
-      }
-
-      // IMPORTANT: ArcTokenPairPool calculates the very first LP mint as
-      // sqrt(amount0Raw * amount1Raw). For USDC/cirBTC the raw token decimals
-      // are intentionally not normalized by the deployed pool. If the RPC
-      // keeps returning zero for balanceOf/totalSupply, we can still recover
-      // the exact LP amount from the confirmed add inputs themselves. This is
-      // only used for the USDC/cirBTC pair and only when the pool was empty
-      // before this add, so no other liquidity path is changed.
-      if (officialPair === 'usdc-cirbtc' && wasEmptyBeforeAdd && added0 > 0n && added1 > 0n) {
-        const firstMintedLp = sqrtBigInt(BigInt(added0) * BigInt(added1));
-        if (firstMintedLp > 0n) {
-          const poolKey = officialConfig.pool.toLowerCase();
-          setOfficialLpReceiptFallbackRaw(prev => ({
-            ...prev,
-            [poolKey]: firstMintedLp,
-          }));
-          setOfficialLpTotalSupplyFallbackRaw(prev => ({
-            ...prev,
-            [poolKey]: firstMintedLp,
-          }));
-        }
-      }
-      const token0Key = officialConfig.token0.toLowerCase();
-      const token1Key = officialConfig.token1.toLowerCase();
-      const before0 = officialAddBalanceBeforeRef.current[token0Key];
-      const before1 = officialAddBalanceBeforeRef.current[token1Key];
-      const current0 = officialBalance0Raw;
-      const current1 = officialBalance1Raw;
-
-      // Only apply a temporary correction when the balance RPC is still
-      // reporting the pre-transaction balance. If the fresh read already
-      // contains the deduction, do not subtract twice.
-      setOfficialBalanceAdjustments(prev => {
-        const next = { ...prev };
-        if (before0 !== undefined && current0 !== undefined && current0 > before0 - added0) {
-          next[token0Key] = added0;
-        }
-        if (before1 !== undefined && current1 !== undefined && current1 > before1 - added1) {
-          next[token1Key] = added1;
-        }
-        return next;
-      });
     }
     if (officialLiquidityTxAction === 'remove') {
-      setOfficialRemoveLpAmount('');
-      const poolKey = officialConfig.pool.toLowerCase();
-      const token0Key = officialConfig.token0.toLowerCase();
-      const token1Key = officialConfig.token1.toLowerCase();
-
-      // A remove-liquidity receipt transfers the withdrawn tokens directly
-      // from the pool back to the wallet. Clear the old ADD adjustment first;
-      // otherwise the UI can keep subtracting the previous deposit and make
-      // it look as if the withdrawn tokens never returned.
-      setOfficialBalanceAdjustments(prev => {
-        const next = { ...prev };
-        delete next[token0Key];
-        delete next[token1Key];
-        return next;
-      });
-      delete officialRemoveExpectedBalanceRef.current[token0Key];
-      delete officialRemoveExpectedBalanceRef.current[token1Key];
-
-      // If the wallet balance RPC is still one block behind, temporarily add
-      // the exact amounts proven by the successful remove receipt. This is
-      // display synchronization only; it does not alter the transaction.
       void (async () => {
         try {
           const receipt = await waitForTransactionReceipt(config, { hash: txHash });
-          const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a9df523b3ef' as `0x${string}`;
+          if (receipt.status !== 'success') {
+            console.error('USDC/cirBTC removeLiquidity reverted:', txHash);
+            setShowTxSuccess(false);
+            return;
+          }
+
+          const poolKey = officialConfig.pool.toLowerCase();
+          const token0Key = officialConfig.token0.toLowerCase();
+          const token1Key = officialConfig.token1.toLowerCase();
           const walletTopic = address ? `0x${address.toLowerCase().replace(/^0x/, '').padStart(64, '0')}` : '';
+          const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952a7f163c4a11628f55a9df523b3ef';
           let returned0 = 0n;
           let returned1 = 0n;
+          let burnedLp = 0n;
 
           for (const log of receipt.logs) {
             if (log.topics[0]?.toLowerCase() !== transferTopic || typeof log.data !== 'string') continue;
             const logAddress = log.address.toLowerCase();
-            if (logAddress !== token0Key && logAddress !== token1Key) continue;
             try {
               const fromTopic = log.topics[1]?.toLowerCase();
               const toTopic = log.topics[2]?.toLowerCase();
-              if (fromTopic !== poolKey || toTopic !== walletTopic) continue;
               const value = BigInt(log.data);
-              if (logAddress === token0Key) returned0 = returned0 + value;
-              if (logAddress === token1Key) returned1 = returned1 + value;
+              if (logAddress === token0Key && fromTopic === poolKey && toTopic === walletTopic) returned0 += value;
+              if (logAddress === token1Key && fromTopic === poolKey && toTopic === walletTopic) returned1 += value;
+              if (logAddress === poolKey && fromTopic === walletTopic && toTopic === `0x${'0'.repeat(64)}`) burnedLp += value;
             } catch {}
           }
 
-          if (returned0 > 0n || returned1 > 0n) {
-            const before0 = officialRemoveBalanceBeforeRef.current[token0Key];
-            const before1 = officialRemoveBalanceBeforeRef.current[token1Key];
-            const current0 = officialBalance0Raw;
-            const current1 = officialBalance1Raw;
-            setOfficialBalanceAdjustments(prev => {
-              const next = { ...prev };
-              // The balance formatter applies `raw - adjustment`. Use a
-              // negative adjustment only while the fresh read is still at
-              // the pre-remove balance, so the withdrawn amount is displayed
-              // immediately without double-counting an already-updated read.
-              if (returned0 > 0n && current0 !== undefined && before0 !== undefined && current0 <= before0) {
-                next[token0Key] = -returned0;
-                officialRemoveExpectedBalanceRef.current[token0Key] = before0 + returned0;
-              } else {
-                delete next[token0Key];
-                if (current0 !== undefined) officialRemoveExpectedBalanceRef.current[token0Key] = current0;
-              }
-              if (returned1 > 0n && current1 !== undefined && before1 !== undefined && current1 <= before1) {
-                next[token1Key] = -returned1;
-                officialRemoveExpectedBalanceRef.current[token1Key] = before1 + returned1;
-              } else {
-                delete next[token1Key];
-                if (current1 !== undefined) officialRemoveExpectedBalanceRef.current[token1Key] = current1;
-              }
-              return next;
-            });
+          // A genuine remove must prove the LP burn and both token withdrawals.
+          if (returned0 === 0n || returned1 === 0n || burnedLp === 0n) {
+            console.error('USDC/cirBTC removeLiquidity receipt did not prove LP burn + token withdrawals:', { txHash, returned0, returned1, burnedLp });
+            setShowTxSuccess(false);
+            return;
           }
-        } catch {
-          // Normal ERC-20 balance polling remains the source of truth.
+
+          setOfficialRemoveLpAmount('');
+          setOfficialBalanceAdjustments(prev => {
+            const next = { ...prev };
+            delete next[token0Key];
+            delete next[token1Key];
+            return next;
+          });
+
+          await Promise.all([
+            refetchOfficialUsdc(),
+            refetchOfficialEurc(),
+            refetchOfficialCirbtc(),
+            refetchOfficialReserves(),
+            refetchOfficialReserve0Direct(),
+            refetchOfficialReserve1Direct(),
+            refetchOfficialLp(),
+            refetchOfficialLpTotal(),
+            refetchOfficialLpDecimals(),
+          ]);
+        } catch (error) {
+          console.error('USDC/cirBTC removeLiquidity verification failed:', error);
+          setShowTxSuccess(false);
         }
       })();
-
-      setOfficialLpReceiptFallbackRaw(prev => {
-        if (!(poolKey in prev)) return prev;
-        const next = { ...prev };
-        delete next[poolKey];
-        return next;
-      });
-      setOfficialLpTotalSupplyFallbackRaw(prev => {
-        if (!(poolKey in prev)) return prev;
-        const next = { ...prev };
-        delete next[poolKey];
-        return next;
-      });
-      setOfficialReserveReceiptFallbackRaw(prev => {
-        if (!(poolKey in prev)) return prev;
-        const next = { ...prev };
-        delete next[poolKey];
-        return next;
-      });
     }
 
     // Refresh only the official queries that are already mounted, once after
@@ -2001,7 +1833,19 @@ export default function App(): JSX.Element {
       setOfficialApprovalSatisfied(prev => prev === '1' ? 'both' : '0');
     } else if (officialLiquidityTxAction === 'approve-1') {
       setOfficialApprovalSatisfied(prev => prev === '0' ? 'both' : '1');
-    } else if (officialLiquidityTxAction === 'add' || officialLiquidityTxAction === 'remove') {
+    } else if (officialLiquidityTxAction === 'add') {
+      // Clear both entered liquidity amounts only after the actual Add Liquidity
+      // transaction has been confirmed successfully. Approval confirmations do
+      // not reach this branch, so the user's amounts remain available between
+      // approval and the final Add Liquidity transaction.
+      setOfficialLiqInput0('');
+      setOfficialLiqInput1('');
+      setOfficialLiqMax0Selected(false);
+      setOfficialLiqMax1Selected(false);
+      setOfficialMaxRaw0(null);
+      setOfficialMaxRaw1(null);
+      setOfficialApprovalSatisfied('');
+    } else if (officialLiquidityTxAction === 'remove') {
       setOfficialApprovalSatisfied('');
     }
 
@@ -4122,33 +3966,33 @@ export default function App(): JSX.Element {
                card to grow naturally when conditional content appears. */
             min-height: 0;
             height: auto;
-            padding: 13px 16px 12px;
+            padding: 9px 16px 8px;
             overflow: visible;
           }
 
           .velox-app.tab-liquidity .card-description {
             margin: -2px 0 6px;
-            line-height: 1.25;
+            line-height: 1.2;
             font-size: 11px;
           }
 
           .velox-app.tab-liquidity .plus-divider {
-            height: 14px;
+            height: 10px;
           }
 
           .velox-app.tab-liquidity .token-box {
-            padding-top: 7px;
-            padding-bottom: 4px;
+            padding-top: 5px;
+            padding-bottom: 3px;
           }
 
           .velox-app.tab-liquidity .pool-stats {
-            margin-top: 5px;
-            gap: 5px;
-            padding-top: 6px;
+            margin-top: 3px;
+            gap: 4px;
+            padding-top: 4px;
           }
 
           .velox-app.tab-liquidity .pool-stat {
-            padding: 6px 10px;
+            padding: 5px 10px;
           }
 
           .velox-app.tab-liquidity .pool-stat span {
@@ -4158,6 +4002,41 @@ export default function App(): JSX.Element {
           .velox-app.tab-liquidity .pool-stat strong {
             font-size: 13px;
           }
+          /* Extra Liquidity-only vertical compaction. Keep all JSX, state,
+             handlers and Web3 logic untouched; these are layout-only overrides. */
+          .velox-app.tab-liquidity .card-title-row {
+            margin-bottom: 6px;
+          }
+
+          .velox-app.tab-liquidity .token-box {
+            padding: 5px 12px 3px;
+          }
+
+          .velox-app.tab-liquidity .balance-row {
+            margin-bottom: 3px;
+          }
+
+          .velox-app.tab-liquidity .token-input {
+            font-size: 22px;
+          }
+
+          .velox-app.tab-liquidity .token-logo {
+            width: 26px;
+            height: 26px;
+            flex-basis: 26px;
+          }
+
+          .velox-app.tab-liquidity .token-selector {
+            min-width: 108px;
+            padding: 4px 8px;
+          }
+
+          .velox-app.tab-liquidity .btn-action {
+            min-height: 38px;
+            flex-basis: 38px;
+            margin-top: 5px;
+          }
+
 
           .velox-app.tab-liquidity .segmented-control button {
             padding: 5px 10px;
